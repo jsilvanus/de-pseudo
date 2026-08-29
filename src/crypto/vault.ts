@@ -21,7 +21,7 @@ function base64ToBytes(value: string): Uint8Array {
 export async function createVaultKey(): Promise<CryptoKey> {
   return crypto.subtle.generateKey(
     { name: ALGORITHM, length: KEY_LENGTH },
-    true,
+    false,
     ['encrypt', 'decrypt'],
   );
 }
@@ -30,26 +30,17 @@ export async function encryptJson<T>(value: T, key: CryptoKey): Promise<Encrypte
   const iv = crypto.getRandomValues(new Uint8Array(IV_LENGTH));
   const plaintext = new TextEncoder().encode(JSON.stringify(value));
   const ciphertext = await crypto.subtle.encrypt({ name: ALGORITHM, iv }, key, plaintext);
-
-  return {
-    iv: bytesToBase64(iv),
-    ciphertext: bytesToBase64(new Uint8Array(ciphertext)),
-  };
+  return { iv: bytesToBase64(iv), ciphertext: bytesToBase64(new Uint8Array(ciphertext)) };
 }
 
 export async function decryptJson<T>(payload: EncryptedPayload, key: CryptoKey): Promise<T> {
   const plaintext = await crypto.subtle.decrypt(
-    { name: ALGORITHM, iv: base64ToBytes(payload.iv) },
-    key,
-    base64ToBytes(payload.ciphertext),
+    { name: ALGORITHM, iv: base64ToBytes(payload.iv) }, key, base64ToBytes(payload.ciphertext),
   );
-
   return JSON.parse(new TextDecoder().decode(plaintext)) as T;
 }
 
-/** Best-effort destruction of a non-extractable CryptoKey reference. */
+/** Web Crypto provides no explicit zeroization; dropping references is the supported lifecycle. */
 export function shredKey(key: CryptoKey | null): void {
-  // CryptoKey objects cannot be explicitly zeroized by the Web Crypto API.
-  // Dropping every application reference lets the browser reclaim the key.
   void key;
 }
