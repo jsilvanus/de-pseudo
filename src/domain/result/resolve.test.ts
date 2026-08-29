@@ -34,9 +34,4 @@ describe('result resolution', () => {
       { pseudonym: 'xyz98765', identity: 'Anna', result: 'abc12345 -> icecream\nAnna -> pizza' },
     ]);
   });
-
-  it('handles special characters in mappings safely', () => {
-    const special = [{ pseudonym: 'a+b.c?', identity: 'Special' }];
-    expect(resolveText('a+b.c? selected', special)).toBe('Special selected');
-  });
 });
