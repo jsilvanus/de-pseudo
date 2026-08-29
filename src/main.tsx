@@ -1,11 +1,19 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { Alert, Box, Button, Container, Paper, Stack, Tab, Tabs, TextField, Typography } from '@mui/material';
+import { Alert, Box, Button, Container, Paper, Stack, TextField, Typography } from '@mui/material';
 import { pseudonymize, formatPseudonymizedRows } from './domain/pseudonym/pseudonymize';
 import type { Dataset } from './domain/dataset/types';
 import { resolveText, findPseudonyms } from './domain/result/resolve';
+import { createEncryptedVault, cryptoshred, persistVault, restorePersistedVault, type VaultState } from './domain/shred/cryptoshred';
 
 const sample = `username\tdata\nJuha\twants icecream\nAnna\twants pizza`;
+
+type Session = {
+  input: string;
+  dataset: Dataset | null;
+  prompt: string;
+  result: string;
+};
 
 function parseInput(value: string) {
   const lines = value.trim().split(/\r?\n/).filter(Boolean);
@@ -26,35 +34,103 @@ function App() {
   const [dataset, setDataset] = useState<Dataset | null>(null);
   const [prompt, setPrompt] = useState('Make an order based on the food preferences.');
   const [result, setResult] = useState('');
+  const [vault, setVault] = useState<VaultState<Session> | null>(null);
+  const [restoring, setRestoring] = useState(true);
   const [shredded, setShredded] = useState(false);
-  const pseudonymized = useMemo(() => dataset ? formatPseudonymizedRows(dataset.rows.map(({ pseudonym, data }) => ({ pseudonym, data }))) : '', [dataset]);
+  const [error, setError] = useState<string | null>(null);
 
-  const handlePseudonymize = () => {
-    const rows = parseInput(input);
-    if (!rows.length) return;
-    setDataset(pseudonymize(rows));
-    setResult('');
-    setShredded(false);
+  useEffect(() => {
+    let active = true;
+    restorePersistedVault<Session>().then((restored) => {
+      if (!active) return;
+      if (restored) {
+        setVault(restored);
+        setInput(restored.data.input);
+        setDataset(restored.data.dataset);
+        setPrompt(restored.data.prompt);
+        setResult(restored.data.result);
+      }
+      setRestoring(false);
+    }).catch(() => {
+      if (active) {
+        setError('Could not restore the encrypted local session.');
+        setRestoring(false);
+      }
+    });
+    return () => { active = false; };
+  }, []);
+
+  const pseudonymized = useMemo(() => dataset
+    ? formatPseudonymizedRows(dataset.rows.map(({ pseudonym, data }) => ({ pseudonym, data })))
+    : '', [dataset]);
+
+  const saveSession = async (next: Session) => {
+    try {
+      const nextVault = vault
+        ? await persistVault({ key: vault.key, data: next })
+        : await createEncryptedVault(next);
+      setVault(nextVault);
+      setError(null);
+    } catch {
+      setError('Could not save the encrypted local session.');
+    }
   };
 
-  const handleShred = () => {
-    setDataset(null);
-    setInput('');
-    setPrompt('');
+  const handlePseudonymize = async () => {
+    const rows = parseInput(input);
+    if (!rows.length) {
+      setError('Enter at least one data row.');
+      return;
+    }
+    const nextDataset = pseudonymize(rows);
+    const next = { input, dataset: nextDataset, prompt, result: '' };
+    setDataset(nextDataset);
     setResult('');
-    setShredded(true);
+    setShredded(false);
+    await saveSession(next);
+  };
+
+  const handleShred = async () => {
+    try {
+      await cryptoshred(vault);
+      setVault(null);
+      setDataset(null);
+      setInput('');
+      setPrompt('');
+      setResult('');
+      setShredded(true);
+      setError(null);
+    } catch {
+      setError('Cryptoshred failed. Local state was not cleared.');
+    }
+  };
+
+  const handlePromptChange = async (value: string) => {
+    setPrompt(value);
+    if (dataset) await saveSession({ input, dataset, prompt: value, result });
+  };
+
+  const handleResultChange = async (value: string) => {
+    setResult(value);
+    if (dataset) await saveSession({ input, dataset, prompt, result: value });
   };
 
   const resolved = dataset && result ? resolveText(result, dataset.mappings) : '';
   const known = dataset && result ? findPseudonyms(result, dataset.mappings) : [];
+
+  if (restoring) {
+    return <Container maxWidth="md" sx={{ py: 8 }}><Typography>Restoring encrypted local session…</Typography></Container>;
+  }
 
   return <Container maxWidth="md" sx={{ py: 5 }}>
     <Stack spacing={3}>
       <Box>
         <Typography variant="h3" fontWeight={700}>de-pseudo</Typography>
         <Typography color="text.secondary">Local-first prompt pseudonymization and cryptoshred.</Typography>
+        <Typography variant="caption" color="text.secondary">{vault ? 'Encrypted local session active' : 'No persistent session'}</Typography>
       </Box>
-      {shredded && <Alert severity="info">Local personal data and the active mapping have been shredded. There is nothing to resolve.</Alert>}
+      {error && <Alert severity="error">{error}</Alert>}
+      {shredded && <Alert severity="info">The encrypted local session, key reference, and active personal data have been shredded.</Alert>}
       <Paper sx={{ p: 3 }}>
         <Stack spacing={2}>
           <Typography variant="h5">1. Dataset</Typography>
@@ -68,14 +144,14 @@ function App() {
           <Stack spacing={2}>
             <Typography variant="h5">2. Prompt</Typography>
             <TextField multiline minRows={5} value={pseudonymized} InputProps={{ readOnly: true }} fullWidth />
-            <TextField multiline minRows={3} value={prompt} onChange={(e) => setPrompt(e.target.value)} label="Instruction" fullWidth />
+            <TextField multiline minRows={3} value={prompt} onChange={(e) => void handlePromptChange(e.target.value)} label="Instruction" fullWidth />
             <Button onClick={() => navigator.clipboard.writeText(`${pseudonymized}\n\n${prompt}`)}>Copy pseudonymized prompt</Button>
           </Stack>
         </Paper>
         <Paper sx={{ p: 3 }}>
           <Stack spacing={2}>
             <Typography variant="h5">3. Result</Typography>
-            <TextField multiline minRows={5} value={result} onChange={(e) => setResult(e.target.value)} placeholder="Paste the AI response here" fullWidth />
+            <TextField multiline minRows={5} value={result} onChange={(e) => void handleResultChange(e.target.value)} placeholder="Paste the AI response here" fullWidth />
             <Typography variant="body2" color="text.secondary">Known pseudonyms found: {known.length}</Typography>
             {resolved && <TextField multiline minRows={5} value={resolved} InputProps={{ readOnly: true }} label="Resolved locally" fullWidth />}
           </Stack>
@@ -83,8 +159,8 @@ function App() {
         <Paper sx={{ p: 3 }}>
           <Stack spacing={2}>
             <Typography variant="h5">4. Cryptoshred</Typography>
-            <Typography color="text.secondary">Destroy the active identity mapping and local personal data. This action cannot be undone.</Typography>
-            <Button color="error" variant="contained" onClick={handleShred}>Shred local data</Button>
+            <Typography color="text.secondary">Destroy the encrypted local session and its key reference. This action cannot be undone.</Typography>
+            <Button color="error" variant="contained" onClick={() => void handleShred()}>Shred local data</Button>
           </Stack>
         </Paper>
       </>}
