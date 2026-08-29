@@ -4,7 +4,7 @@ import { Alert, Box, Button, Container, Paper, Stack, TextField, Typography } fr
 import { pseudonymize, formatPseudonymizedRows } from './domain/pseudonym/pseudonymize';
 import type { Dataset } from './domain/dataset/types';
 import { resolveText, findPseudonyms } from './domain/result/resolve';
-import { createEncryptedVault, cryptoshred, persistVault, restorePersistedVault, type VaultState } from './domain/shred/cryptoshred';
+import { SessionVault } from './domain/shred/sessionVault';
 
 const sample = `username\tdata\nJuha\twants icecream\nAnna\twants pizza`;
 
@@ -34,21 +34,20 @@ function App() {
   const [dataset, setDataset] = useState<Dataset | null>(null);
   const [prompt, setPrompt] = useState('Make an order based on the food preferences.');
   const [result, setResult] = useState('');
-  const [vault, setVault] = useState<VaultState<Session> | null>(null);
+  const [vault] = useState(() => new SessionVault<Session>());
   const [restoring, setRestoring] = useState(true);
   const [shredded, setShredded] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
-    restorePersistedVault<Session>().then((restored) => {
+    vault.restore().then((restored) => {
       if (!active) return;
       if (restored) {
-        setVault(restored);
-        setInput(restored.data.input);
-        setDataset(restored.data.dataset);
-        setPrompt(restored.data.prompt);
-        setResult(restored.data.result);
+        setInput(restored.input);
+        setDataset(restored.dataset);
+        setPrompt(restored.prompt);
+        setResult(restored.result);
       }
       setRestoring(false);
     }).catch(() => {
@@ -58,7 +57,7 @@ function App() {
       }
     });
     return () => { active = false; };
-  }, []);
+  }, [vault]);
 
   const pseudonymized = useMemo(() => dataset
     ? formatPseudonymizedRows(dataset.rows.map(({ pseudonym, data }) => ({ pseudonym, data })))
@@ -66,10 +65,7 @@ function App() {
 
   const saveSession = async (next: Session) => {
     try {
-      const nextVault = vault
-        ? await persistVault({ key: vault.key, data: next })
-        : await createEncryptedVault(next);
-      setVault(nextVault);
+      await vault.update(next);
       setError(null);
     } catch {
       setError('Could not save the encrypted local session.');
@@ -92,8 +88,7 @@ function App() {
 
   const handleShred = async () => {
     try {
-      await cryptoshred(vault);
-      setVault(null);
+      await vault.shred();
       setDataset(null);
       setInput('');
       setPrompt('');
@@ -127,7 +122,7 @@ function App() {
       <Box>
         <Typography variant="h3" fontWeight={700}>de-pseudo</Typography>
         <Typography color="text.secondary">Local-first prompt pseudonymization and cryptoshred.</Typography>
-        <Typography variant="caption" color="text.secondary">{vault ? 'Encrypted local session active' : 'No persistent session'}</Typography>
+        <Typography variant="caption" color="text.secondary">{vault.active ? 'Encrypted local session active' : 'No persistent session'}</Typography>
       </Box>
       {error && <Alert severity="error">{error}</Alert>}
       {shredded && <Alert severity="info">The encrypted local session, key reference, and active personal data have been shredded.</Alert>}
