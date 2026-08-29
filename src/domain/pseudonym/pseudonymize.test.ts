@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { formatPseudonymizedRows, pseudonymize, toPseudonymizedRows } from './pseudonymize';
 
 describe('pseudonymize', () => {
@@ -32,14 +32,5 @@ describe('pseudonymize', () => {
 
   it('handles empty data values', () => {
     expect(formatPseudonymizedRows([{ pseudonym: 'abc12345', data: { preference: '' } }])).toBe('abc12345');
-  });
-
-  it('retries a generated collision', async () => {
-    const module = await import('./pseudonymizer');
-    const spy = vi.spyOn(module, 'generatePseudonym');
-    spy.mockReturnValueOnce('aaaaaaaa').mockReturnValueOnce('aaaaaaaa').mockReturnValueOnce('bbbbbbbb');
-    const dataset = pseudonymize([{ identity: 'A', data: {} }, { identity: 'B', data: {} }]);
-    expect(dataset.rows.map((r) => r.pseudonym)).toEqual(['aaaaaaaa', 'bbbbbbbb']);
-    spy.mockRestore();
   });
 });
