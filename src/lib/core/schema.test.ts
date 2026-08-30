@@ -14,13 +14,14 @@ describe('dataset schema', () => {
   });
 
   it('uses the explicitly selected reference target', () => {
-    const schema = defaultSchema(records);
+    const targetRecords = records.map((r, i) => ({ ...r, friend: i === 0 ? 'B1' : 'A1' }));
+    const schema = defaultSchema(targetRecords);
     schema.columns.find(c => c.name === 'employeeId')!.mode = 'pseudonymize';
     schema.columns.find(c => c.name === 'friend')!.mode = 'reference';
     schema.columns.find(c => c.name === 'friend')!.referenceTarget = 'employeeId';
-    const rows = applySchema(records, ['aaa', 'bbb'], schema);
-    expect(rows[0].friend).toBe('Bob');
-    expect(rows[1].friend).toBe('Alice');
+    const rows = applySchema(targetRecords, ['aaa', 'bbb'], schema);
+    expect(rows[0].friend).toBe('bbb');
+    expect(rows[1].friend).toBe('aaa');
     expect(rows[0].employeeId).toBeUndefined();
     expect(rows[0].pseudonym).toBe('aaa');
   });
