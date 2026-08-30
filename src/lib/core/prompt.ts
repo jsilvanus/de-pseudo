@@ -20,10 +20,37 @@ export function responseInstructions(format: ResponseFormat = 'lines', sessionId
       ].join('\n');
 }
 
+function tsvCell(value: unknown): string {
+  if (value === null || value === undefined) return '';
+  return String(value).replace(/\r?\n/g, ' ');
+}
+
+export function pseudonymizedTsv(rows: Record<string, unknown>[]): string {
+  if (!rows.length) return '';
+  const columns = [...new Set(rows.flatMap(row => Object.keys(row)))];
+  return [columns.map(tsvCell).join('\t'), ...rows.map(row => columns.map(column => tsvCell(row[column])).join('\t'))].join('\n');
+}
+
+function expandPromptTokens(task: string, rows: Record<string, unknown>[]): string {
+  return task
+    .replace(/\{\{pseudonymized values\}\}/gi, () => [
+      '--- PSEUDONYMIZED DATA ---',
+      pseudonymizedTsv(rows),
+      '--- END PSEUDONYMIZED DATA ---',
+    ].join('\n'))
+    .replace(/\{\{([^{}]+)\}\}/g, (_, column: string) => {
+      const name = column.trim();
+      if (name.toLowerCase() === 'pseudonymized values') return _;
+      return rows.map(row => `${name}: ${tsvCell(row[name])}`).join('\n');
+    });
+}
+
 export function buildPrompt(rows: unknown[], task: string, format: ResponseFormat = 'lines', sessionId?: string, schema?: DatasetSchema): string {
   const id = sessionId ?? generateSessionId();
   const outputFields = schema?.output.map(f => f.name) ?? ['pseudonym', 'choice'];
-  return [`SESSION ID: ${id}`, '', task.trim(), '', responseInstructions(format, id, outputFields), '', 'DATA', JSON.stringify(rows, null, 2)].join('\n');
+  const safeRows = rows.filter((row): row is Record<string, unknown> => !!row && typeof row === 'object');
+  const expandedTask = expandPromptTokens(task.trim(), safeRows);
+  return [`SESSION ID: ${id}`, '', expandedTask, '', responseInstructions(format, id, outputFields)].join('\n');
 }
 
 export function generateSessionId(): string {
