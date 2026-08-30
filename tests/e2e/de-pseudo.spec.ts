@@ -42,10 +42,11 @@ test.describe('de-pseudo browser workflow', () => {
     await expect(generated).not.toHaveValue(/Mary Smith/);
   });
 
-  test('validates an AI response and exposes only the final local copy action', async ({ page }) => {
+  test('validates a tsv AI response (the default reply format) and exposes only the final local copy action', async ({ page }) => {
     await createSession(page);
-    const generated = page.getByRole('heading', { name: '7. Generated AI prompt' }).locator('..').locator('textarea').first();
-    const prompt = await generated.inputValue();
+    const section7 = page.getByRole('heading', { name: '7. Generated AI prompt' }).locator('..');
+    await expect(section7.getByRole('button', { name: 'TSV', exact: true })).toHaveAttribute('aria-pressed', 'true');
+    const prompt = await section7.locator('textarea').first().inputValue();
     const sessionId = prompt.match(/SESSION ID:\s*([0-9a-f]{32})/)?.[1];
     expect(sessionId).toBeTruthy();
     // Pseudonyms are 12-char hex tokens, one per row, in the leading column of
@@ -53,12 +54,45 @@ test.describe('de-pseudo browser workflow', () => {
     const pseudonyms = [...prompt.matchAll(/^([0-9a-f]{12})\t/gm)].map((m) => m[1]);
     expect(pseudonyms.length).toBeGreaterThan(0);
     // The response must cover every pseudonym or the app rejects it as incomplete.
-    const response = [`SESSION ID: ${sessionId}`, ...pseudonyms.map((p) => `${p} -> pizza`)].join('\n');
+    const response = [`SESSION ID:\t${sessionId}`, 'pseudonym\tchoice', ...pseudonyms.map((p) => `${p}\tpizza`)].join('\n');
 
     await page.getByRole('heading', { name: '8. Paste AI result' }).locator('..').getByRole('textbox').fill(response);
     await page.getByRole('button', { name: /Validate & resolve locally/i }).click();
     await expect(page.getByRole('heading', { name: '9. Final output' })).toBeVisible();
     await expect(page.getByRole('button', { name: /^Copy$/i })).toBeVisible();
+  });
+
+  test('round-trips using the csv AI reply format', async ({ page }) => {
+    await createSession(page);
+    const section7 = page.getByRole('heading', { name: '7. Generated AI prompt' }).locator('..');
+    await section7.getByRole('button', { name: 'CSV', exact: true }).click();
+
+    const prompt = await section7.locator('textarea').first().inputValue();
+    expect(prompt).toContain('comma-separated (CSV) table');
+    const sessionId = prompt.match(/SESSION ID:\s*([0-9a-f]{32})/)?.[1];
+    const pseudonyms = [...prompt.matchAll(/^([0-9a-f]{12}),/gm)].map((m) => m[1]);
+    expect(pseudonyms.length).toBeGreaterThan(0);
+    const response = [`SESSION ID: ${sessionId}`, 'pseudonym,choice', ...pseudonyms.map((p) => `${p},pizza`)].join('\n');
+
+    await page.getByRole('heading', { name: '8. Paste AI result' }).locator('..').getByRole('textbox').fill(response);
+    await page.getByRole('button', { name: /Validate & resolve locally/i }).click();
+    await expect(page.getByRole('heading', { name: '9. Final output' })).toBeVisible();
+  });
+
+  test('round-trips using the json AI reply format', async ({ page }) => {
+    await createSession(page);
+    const section7 = page.getByRole('heading', { name: '7. Generated AI prompt' }).locator('..');
+    await section7.getByRole('button', { name: 'JSON', exact: true }).click();
+
+    const prompt = await section7.locator('textarea').first().inputValue();
+    const sessionId = prompt.match(/SESSION ID:\s*([0-9a-f]{32})/)?.[1];
+    const pseudonyms = [...prompt.matchAll(/^([0-9a-f]{12})\t/gm)].map((m) => m[1]);
+    expect(pseudonyms.length).toBeGreaterThan(0);
+    const response = JSON.stringify({ sessionId, results: pseudonyms.map((p) => ({ pseudonym: p, choice: 'pizza' })) });
+
+    await page.getByRole('heading', { name: '8. Paste AI result' }).locator('..').getByRole('textbox').fill(response);
+    await page.getByRole('button', { name: /Validate & resolve locally/i }).click();
+    await expect(page.getByRole('heading', { name: '9. Final output' })).toBeVisible();
   });
 
   test('cryptoshred returns the application to a clean input state', async ({ page }) => {
@@ -67,6 +101,33 @@ test.describe('de-pseudo browser workflow', () => {
     await expect(page.getByRole('heading', { name: '1. Load data' })).toBeVisible();
     await expect(page.getByText('Session shredded.')).toBeVisible();
     await expect(page.getByText('John Johnson')).not.toBeVisible();
+  });
+
+  test('supports pasting comma-separated input and labels the format actually used', async ({ page }) => {
+    await page.goto('/');
+    await page.getByRole('button', { name: 'CSV (comma)' }).click();
+    await page.getByLabel('Paste data').fill('username,preference\nJohn Johnson,icecream\nMary Smith,pizza');
+    await expect(page.getByText(/Loaded 2 rows from Pasted text \(CSV\)\./)).toBeVisible();
+
+    await page.getByRole('button', { name: /Pseudonymize & save locally/i }).click();
+    const generated = page.getByRole('heading', { name: '7. Generated AI prompt' }).locator('..').locator('textarea').first();
+    const value = await generated.inputValue();
+    expect(value).not.toContain('John Johnson');
+    expect(value).not.toContain('Mary Smith');
+  });
+
+  test('shows the how-it-works explanation, the anonymization note, and the developer/license footer', async ({ page }) => {
+    await page.goto('/');
+    await expect(page.getByRole('heading', { name: 'How it works' })).toBeVisible();
+    await expect(page.getByText(/pseudonymization/i).first()).toBeVisible();
+    await expect(page.getByText(/does not guarantee anonymity/i)).toBeVisible();
+
+    const devLink = page.getByRole('link', { name: /Juha Itäleino/ });
+    await expect(devLink).toHaveAttribute('href', 'https://github.com/jsilvanus');
+    const sourceLink = page.getByRole('link', { name: /source on GitHub/i });
+    await expect(sourceLink).toHaveAttribute('href', 'https://github.com/jsilvanus/de-pseudo');
+    const licenseLink = page.getByRole('link', { name: /EUPL-1\.2/ });
+    await expect(licenseLink).toHaveAttribute('href', 'https://github.com/jsilvanus/de-pseudo/blob/main/LICENSE');
   });
 });
 

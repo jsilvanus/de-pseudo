@@ -24,6 +24,15 @@ export function responseInstructions(format: ResponseFormat = 'tsv', sessionId =
     'Do not invent, modify, or omit pseudonyms. Do not include real names or identifying information.',
     'Do not include markdown or explanatory text.',
   ].join('\n');
+  if (format === 'csv') return [
+    'OUTPUT FORMAT',
+    `First line must be exactly: SESSION ID: ${sessionId}`,
+    `Then return a comma-separated (CSV) table with these columns: ${fields}.`,
+    'The pseudonym column must be present and must contain every pseudonym exactly once.',
+    'Quote a field in double quotes if it contains a comma, a quote, or a line break.',
+    'Do not invent, modify, or omit pseudonyms. Do not include real names or identifying information.',
+    'Do not include markdown or explanatory text.',
+  ].join('\n');
   return [
     'OUTPUT FORMAT', `First line must be exactly: SESSION ID: ${sessionId}`,
     `Then return exactly one line for each pseudonym: <pseudonym> -> <choice>`,
@@ -38,10 +47,22 @@ function tsvCell(value: unknown): string {
   return String(value).replace(/\r?\n/g, ' ').replace(/\t/g, ' ');
 }
 
-export function pseudonymizedTsv(rows: Record<string, unknown>[]): string {
+function csvCell(value: unknown): string {
+  if (value === null || value === undefined) return '';
+  const str = String(value).replace(/\r?\n/g, ' ');
+  return /[",]/.test(str) ? `"${str.replace(/"/g, '""')}"` : str;
+}
+
+/** Render rows as a delimited table; used for both the AI-facing pseudonymized data block and its response format. */
+export function pseudonymizedTable(rows: Record<string, unknown>[], delimiter: ',' | '\t' = '\t'): string {
   if (!rows.length) return '';
+  const cell = delimiter === ',' ? csvCell : tsvCell;
   const columns = [...new Set(rows.flatMap(row => Object.keys(row)))];
-  return [columns.map(tsvCell).join('\t'), ...rows.map(row => columns.map(column => tsvCell(row[column])).join('\t'))].join('\n');
+  return [columns.map(cell).join(delimiter), ...rows.map(row => columns.map(column => cell(row[column])).join(delimiter))].join('\n');
+}
+
+export function pseudonymizedTsv(rows: Record<string, unknown>[]): string {
+  return pseudonymizedTable(rows, '\t');
 }
 
 function sanitizeRows(rows: Record<string, unknown>[], schema?: DatasetSchema): Record<string, unknown>[] {
@@ -74,13 +95,14 @@ function columnIsBlocked(name: string, schema?: DatasetSchema): boolean {
   return COMMON_IDENTITY_COLUMNS.has(name.trim().toLowerCase());
 }
 
-function pseudonymizedDataBlock(rows: Record<string, unknown>[]): string {
-  return ['--- PSEUDONYMIZED DATA ---', pseudonymizedTsv(rows), '--- END PSEUDONYMIZED DATA ---'].join('\n');
+function pseudonymizedDataBlock(rows: Record<string, unknown>[], format: ResponseFormat): string {
+  const delimiter = format === 'csv' ? ',' : '\t';
+  return ['--- PSEUDONYMIZED DATA ---', pseudonymizedTable(rows, delimiter), '--- END PSEUDONYMIZED DATA ---'].join('\n');
 }
 
-function expandPromptTokens(task: string, rows: Record<string, unknown>[], schema?: DatasetSchema): string {
+function expandPromptTokens(task: string, rows: Record<string, unknown>[], format: ResponseFormat, schema?: DatasetSchema): string {
   return task
-    .replace(/\{\{pseudonymized values\}\}/gi, () => pseudonymizedDataBlock(rows))
+    .replace(/\{\{pseudonymized values\}\}/gi, () => pseudonymizedDataBlock(rows, format))
     .replace(/\{\{([^{}]+)\}\}/g, (_, column: string) => {
       const name = column.trim();
       if (name.toLowerCase() === 'pseudonymized values') return _;
@@ -99,10 +121,10 @@ export function buildPrompt(rows: unknown[], task: string, format: ResponseForma
   const safeRows = sanitizeRows(objectRows, schema);
   const trimmedTask = task.trim();
   const hasDataToken = /\{\{pseudonymized values\}\}/i.test(trimmedTask);
-  let expandedTask = expandPromptTokens(trimmedTask, safeRows, schema);
+  let expandedTask = expandPromptTokens(trimmedTask, safeRows, format, schema);
   // The pseudonymized dataset is always visible to the AI, even if the task
   // text never references it via {{pseudonymized values}}.
-  if (!hasDataToken) expandedTask = [expandedTask, pseudonymizedDataBlock(safeRows)].join('\n\n');
+  if (!hasDataToken) expandedTask = [expandedTask, pseudonymizedDataBlock(safeRows, format)].join('\n\n');
   return [`SESSION ID: ${id}`, '', expandedTask, '', responseInstructions(format, id, outputFields)].join('\n');
 }
 

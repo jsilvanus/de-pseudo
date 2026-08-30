@@ -17,6 +17,6 @@ export type IdentityMapping = Record<string, InputRecord>;
 export type CellReference = { sourceRow: number; sourceColumn: string; targetRow: number; targetColumn: string };
 export type PseudonymizedDataset = { rows: PseudonymizedRecord[]; mapping: IdentityMapping; schema?: DatasetSchema; cellReferences?: CellReference[] };
 
-export type ResponseFormat = 'lines' | 'json' | 'tsv';
+export type ResponseFormat = 'lines' | 'json' | 'tsv' | 'csv';
 export type ParsedResult = { pseudonym: string; choice: string; [key: string]: CellValue };
 export type ValidationResult = { valid: ParsedResult[]; unknown: ParsedResult[]; duplicatePseudonyms: string[]; missingPseudonyms: string[] };
