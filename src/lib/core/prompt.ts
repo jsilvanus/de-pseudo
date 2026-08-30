@@ -1,18 +1,21 @@
 import type { ResponseFormat } from './types';
 
-export function responseInstructions(format: ResponseFormat = 'lines'): string {
+export function responseInstructions(format: ResponseFormat = 'lines', sessionId = '<session-id>'): string {
   return format === 'json'
     ? [
         'OUTPUT FORMAT',
-        'Return ONLY a JSON array.',
-        '[{"pseudonym":"<pseudonym>","choice":"<choice>"}]',
+        'Return ONLY a JSON object.',
+        '{"sessionId":"<session-id>","results":[{"pseudonym":"<pseudonym>","choice":"<choice>"}]}',
+        `Set sessionId exactly to: ${sessionId}`,
         'Use every pseudonym exactly as provided. Return one object per pseudonym.',
         'Do not invent, modify, or omit pseudonyms. Do not include real names or identifying information.',
         'Do not include markdown or explanatory text.',
       ].join('\n')
     : [
         'OUTPUT FORMAT',
-        'Return exactly one line for each pseudonym:',
+        'First line must be exactly:',
+        `SESSION ID: ${sessionId}`,
+        'Then return exactly one line for each pseudonym:',
         '<pseudonym> -> <choice>',
         'Use every pseudonym exactly as provided. Return one line per pseudonym.',
         'Do not invent, modify, or omit pseudonyms. Do not include real names or identifying information.',
@@ -32,14 +35,13 @@ export function buildPrompt(
     '',
     task.trim(),
     '',
-    responseInstructions(format),
+    responseInstructions(format, id),
     '',
     'DATA',
     JSON.stringify(rows, null, 2),
   ].join('\n');
 }
 
-/** Generate a non-person-derived 128-bit session identifier. */
 export function generateSessionId(): string {
   if (!globalThis.crypto?.getRandomValues) {
     throw new Error('A cryptographically secure random source is required');
