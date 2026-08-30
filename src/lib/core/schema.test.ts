@@ -3,8 +3,8 @@ import { applySchema, defaultSchema, projectOutput } from './schema';
 
 describe('dataset schema', () => {
   const records = [
-    { username: 'Alice', food: 'ice cream', age: 42, friend: 'Bob' },
-    { username: 'Bob', food: 'pizza', age: 51, friend: 'Alice' },
+    { username: 'Alice', employeeId: 'A1', food: 'ice cream', age: 42, friend: 'Bob' },
+    { username: 'Bob', employeeId: 'B1', food: 'pizza', age: 51, friend: 'Alice' },
   ];
 
   it('defaults identity to pseudonymize and identity output', () => {
@@ -13,16 +13,34 @@ describe('dataset schema', () => {
     expect(schema.output).toEqual([{ name: 'username', source: 'pseudonym' }]);
   });
 
-  it('pseudonymizes references without exposing identities', () => {
+  it('uses the explicitly selected reference target', () => {
+    const schema = defaultSchema(records);
+    schema.columns.find(c => c.name === 'employeeId')!.mode = 'pseudonymize';
+    schema.columns.find(c => c.name === 'friend')!.mode = 'reference';
+    schema.columns.find(c => c.name === 'friend')!.referenceTarget = 'employeeId';
+    const rows = applySchema(records, ['aaa', 'bbb'], schema);
+    expect(rows[0].friend).toBe('Bob');
+    expect(rows[1].friend).toBe('Alice');
+    expect(rows[0].employeeId).toBeUndefined();
+    expect(rows[0].pseudonym).toBe('aaa');
+  });
+
+  it('pseudonymizes references to the selected identity field', () => {
     const schema = defaultSchema(records);
     schema.columns.find(c => c.name === 'friend')!.mode = 'reference';
+    schema.columns.find(c => c.name === 'friend')!.referenceTarget = 'username';
     const rows = applySchema(records, ['aaa', 'bbb'], schema);
-    expect(rows).toEqual([
-      { pseudonym: 'aaa', food: 'ice cream', age: 42, friend: 'bbb' },
-      { pseudonym: 'bbb', food: 'pizza', age: 51, friend: 'aaa' },
-    ]);
+    expect(rows[0].friend).toBe('bbb');
+    expect(rows[1].friend).toBe('aaa');
     expect(JSON.stringify(rows)).not.toContain('Alice');
     expect(JSON.stringify(rows)).not.toContain('Bob');
+  });
+
+  it('rejects a reference target that is not pseudonymized', () => {
+    const schema = defaultSchema(records);
+    schema.columns.find(c => c.name === 'friend')!.mode = 'reference';
+    schema.columns.find(c => c.name === 'friend')!.referenceTarget = 'employeeId';
+    expect(() => applySchema(records, ['aaa', 'bbb'], schema)).toThrow(/not a pseudonymized column/);
   });
 
   it('removes selected input columns', () => {
