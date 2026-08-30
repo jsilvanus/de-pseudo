@@ -69,3 +69,65 @@ test.describe('de-pseudo browser workflow', () => {
     await expect(page.getByText('John Johnson')).not.toBeVisible();
   });
 });
+
+test.describe('ambiguous and unmatched reference text', () => {
+  // Anna Johnson and Anna Benson share a first name, so a bare "Anna" is
+  // ambiguous between them; "Anna B." matches neither exactly and has no
+  // automatic candidate at all. Neither should ever reach the generated
+  // prompt unresolved.
+  const referenceInput = [
+    ['username', 'friend'],
+    ['Anna Johnson', 'Anna B.'],
+    ['John Johnson', 'Anna'],
+    ['Anna Benson', ''],
+  ].map((row) => row.join('\t')).join('\n');
+
+  async function setFriendColumnToReference(page: import('@playwright/test').Page) {
+    const friendRow = page.locator('tr', { hasText: 'friend' });
+    await friendRow.getByRole('combobox').first().click();
+    await page.getByRole('option', { name: 'Reference' }).click();
+  }
+
+  test('blocks prompt generation until ambiguous and unmatched references are resolved', async ({ page }) => {
+    await page.goto('/');
+    await page.getByLabel('Paste data').fill(referenceInput);
+    await page.getByRole('button', { name: /Pseudonymize & save locally/i }).click();
+    await setFriendColumnToReference(page);
+
+    const section4 = page.getByRole('heading', { name: '4. Resolve text references' }).locator('..');
+    await expect(section4).toContainText('Unresolved references');
+    await expect(section4).toContainText('"Anna B."');
+    await expect(section4).toContainText('"Anna"');
+    // The UI should say *why* each one is unresolved, not just that it is.
+    await expect(section4).toContainText('no automatic match');
+    await expect(section4).toContainText('matches 2 people');
+
+    const section7 = page.getByRole('heading', { name: '7. Generated AI prompt' }).locator('..');
+    await expect(section7).toContainText('Prompt generation is blocked');
+    await expect(section7.locator('textarea')).toHaveCount(0);
+
+    const personSelects = section4.getByRole('combobox');
+    await expect(personSelects).toHaveCount(2);
+
+    // Even the zero-candidate "Anna B." must still let a person be picked
+    // manually — every identity is offered, not just automatic matches.
+    await personSelects.nth(0).click();
+    await expect(page.getByRole('option')).toHaveText(['Unresolved', 'Anna Johnson', 'John Johnson', 'Anna Benson']);
+    await page.getByRole('option', { name: 'Anna Benson', exact: true }).click();
+
+    // Resolving only one of the two must not unblock the prompt yet.
+    await expect(section7).toContainText('Prompt generation is blocked');
+
+    await personSelects.nth(1).click();
+    await page.getByRole('option', { name: 'Anna Johnson', exact: true }).click();
+
+    // Both resolved: the prompt now generates, still with no raw names in it.
+    await expect(section7.locator('textarea').first()).toBeVisible();
+    const prompt = await section7.locator('textarea').first().inputValue();
+    expect(prompt).not.toContain('Anna Johnson');
+    expect(prompt).not.toContain('Anna Benson');
+    expect(prompt).not.toContain('John Johnson');
+    expect(prompt).not.toContain('Anna B.');
+    expect(prompt).toMatch(/pseudonym\tfriend/);
+  });
+});

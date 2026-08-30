@@ -1,4 +1,17 @@
-import type { CellValue, DatasetSchema, InputRecord, PseudonymizedRecord } from './types';
+import type { CellReference, CellValue, DatasetSchema, InputRecord, PseudonymizedRecord } from './types';
+
+/**
+ * Manual disambiguation for reference-column free text that doesn't exactly
+ * match a target identity value (e.g. "Anna" when both "Anna Johnson" and
+ * "Anna Benson" exist). `cellReferences` pin a specific cell to a specific
+ * row and take precedence; `aliases` resolve every occurrence of a given
+ * free-text value in a column to a chosen target identity value, keyed by
+ * `${columnName}:${rawReferenceText}`.
+ */
+export type ReferenceOverrides = {
+  aliases?: Record<string, string>;
+  cellReferences?: CellReference[];
+};
 
 export function defaultSchema(records: InputRecord[], identityColumn = 'username'): DatasetSchema {
   const names = [...new Set(records.flatMap(r => Object.keys(r)))];
@@ -19,11 +32,59 @@ export function defaultSchema(records: InputRecord[], identityColumn = 'username
   };
 }
 
-function pseudonymizeReference(value: CellValue, lookup: Map<string, string>): CellValue {
-  if (typeof value === 'string') return lookup.get(value) ?? value;
-  if (Array.isArray(value)) return value.map(v => pseudonymizeReference(v, lookup));
+function resolveReferenceValue(
+  value: string,
+  lookup: Map<string, string>,
+  columnName: string,
+  rowIndex: number,
+  overrides: ReferenceOverrides,
+  pseudonymByRow: string[],
+  unresolved: Set<string>,
+): string {
+  if (!value.trim()) return value;
+
+  // A drawn cell-to-cell reference is the most specific signal available and
+  // always wins, regardless of what the cell's text says.
+  const cellOverride = overrides.cellReferences?.find(
+    (ref) => ref.sourceRow === rowIndex && ref.sourceColumn === columnName,
+  );
+  if (cellOverride) {
+    const pseudonym = pseudonymByRow[cellOverride.targetRow];
+    if (pseudonym) return pseudonym;
+  }
+
+  const exact = lookup.get(value);
+  if (exact) return exact;
+
+  // Otherwise fall back to a manually chosen alias for this exact free-text
+  // value in this column (e.g. "Anna" -> "Anna Benson").
+  const alias = overrides.aliases?.[`${columnName}:${value}`];
+  const aliasResolved = alias ? lookup.get(alias) : undefined;
+  if (aliasResolved) return aliasResolved;
+
+  unresolved.add(`${columnName}: "${value}"`);
+  return value;
+}
+
+function pseudonymizeReference(
+  value: CellValue,
+  lookup: Map<string, string>,
+  columnName: string,
+  rowIndex: number,
+  overrides: ReferenceOverrides,
+  pseudonymByRow: string[],
+  unresolved: Set<string>,
+): CellValue {
+  if (typeof value === 'string') {
+    return resolveReferenceValue(value, lookup, columnName, rowIndex, overrides, pseudonymByRow, unresolved);
+  }
+  if (Array.isArray(value)) {
+    return value.map((v) => pseudonymizeReference(v, lookup, columnName, rowIndex, overrides, pseudonymByRow, unresolved));
+  }
   if (value && typeof value === 'object') {
-    return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, pseudonymizeReference(v, lookup)]));
+    return Object.fromEntries(
+      Object.entries(value).map(([k, v]) => [k, pseudonymizeReference(v, lookup, columnName, rowIndex, overrides, pseudonymByRow, unresolved)]),
+    );
   }
   return value;
 }
@@ -33,6 +94,7 @@ export function applySchema(
   pseudonyms: string[],
   schema: DatasetSchema,
   identityColumn = 'username',
+  overrides: ReferenceOverrides = {},
 ): PseudonymizedRecord[] {
   const targetIndexes = new Map(schema.columns.map(column => [column.name, column]));
   const lookupByTarget = new Map<string, Map<string, string>>();
@@ -51,7 +113,8 @@ export function applySchema(
     lookupByTarget.set(column.referenceTarget, targetLookup);
   }
 
-  return records.map((record, i) => {
+  const unresolved = new Set<string>();
+  const rows = records.map((record, i) => {
     const out: PseudonymizedRecord = { pseudonym: pseudonyms[i] };
     for (const column of schema.columns) {
       const value = record[column.name];
@@ -59,11 +122,23 @@ export function applySchema(
       if (column.mode === 'reference') {
         const lookup = lookupByTarget.get(column.referenceTarget ?? '');
         if (!lookup) throw new Error(`Reference column "${column.name}" has no valid reference target.`);
-        out[column.name] = pseudonymizeReference(value, lookup);
+        out[column.name] = pseudonymizeReference(value, lookup, column.name, i, overrides, pseudonyms, unresolved);
       } else out[column.name] = value;
     }
     return out;
   });
+
+  // A reference that can't be tied to a person must never fall through to the
+  // AI as raw text: that would be exactly the identity leak this schema
+  // exists to prevent. Block the whole dataset until it's resolved instead of
+  // silently ignoring the ambiguity.
+  if (unresolved.size) {
+    throw new Error(
+      `Unresolved references: ${[...unresolved].join(', ')}. Resolve them in "Resolve text references" before generating a prompt.`,
+    );
+  }
+
+  return rows;
 }
 
 export function projectOutput(rows: Record<string, CellValue>[], output: DatasetSchema['output']): Record<string, CellValue>[] {
