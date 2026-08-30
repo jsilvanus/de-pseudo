@@ -1,6 +1,5 @@
 import { encryptJson, createVaultKey, decryptJson, shredKey } from '../../crypto/vault';
-import { saveEncryptedVault, loadEncryptedVault, shredLocalVault } from '../../storage/localVault';
-import { saveVaultKey, loadVaultKey, shredVaultKey } from '../../storage/localKey';
+import { saveSession, loadSession, shredSession } from '../../storage/localVault';
 
 export type VaultState<T> = { key: CryptoKey; data: T; generation: string };
 
@@ -13,24 +12,22 @@ export async function createEncryptedVault<T>(data: T): Promise<VaultState<T>> {
   const key = await createVaultKey();
   const generation = generationId();
   const payload = await encryptJson(data, key, generation);
-  await saveEncryptedVault({ generation, payload });
-  await saveVaultKey(key);
+  await saveSession({ generation, payload }, key);
   return { key, data, generation };
 }
 
 export async function persistVault<T>(vault: VaultState<T>): Promise<VaultState<T>> {
   const payload = await encryptJson(vault.data, vault.key, vault.generation);
-  await saveEncryptedVault({ generation: vault.generation, payload });
+  await saveSession({ generation: vault.generation, payload }, vault.key);
   return vault;
 }
 
 export async function restorePersistedVault<T>(): Promise<VaultState<T> | null> {
-  const [stored, key] = await Promise.all([loadEncryptedVault(), loadVaultKey()]);
-  if (!stored || !key || !stored.generation) return null;
-
+  const session = await loadSession();
+  if (!session || !session.stored.generation) return null;
   try {
-    const data = await decryptJson<T>(stored.payload, key, stored.generation);
-    return { key, data, generation: stored.generation };
+    const data = await decryptJson<T>(session.stored.payload, session.key, session.stored.generation);
+    return { key: session.key, data, generation: session.stored.generation };
   } catch {
     return null;
   }
@@ -38,6 +35,6 @@ export async function restorePersistedVault<T>(): Promise<VaultState<T> | null> 
 
 export async function cryptoshred<T>(vault: VaultState<T> | null): Promise<null> {
   if (vault) shredKey(vault.key);
-  await Promise.all([shredLocalVault(), shredVaultKey()]);
+  await shredSession();
   return null;
 }
