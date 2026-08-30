@@ -1,28 +1,35 @@
 import type { DatasetSchema, ResponseFormat } from './types';
 
-export function responseInstructions(format: ResponseFormat = 'lines', sessionId = '<session-id>', outputFields: string[] = ['pseudonym', 'choice']): string {
+export function responseInstructions(format: ResponseFormat = 'tsv', sessionId = '<session-id>', outputFields: string[] = ['pseudonym', 'choice']): string {
   const fields = outputFields.join(', ');
-  return format === 'json'
-    ? [
-        'OUTPUT FORMAT', 'Return ONLY a JSON object.',
-        `{"sessionId":"<session-id>","results":[{${outputFields.map(f => `"${f}":"<value>"`).join(',')}}]}`,
-        `Set sessionId exactly to: ${sessionId}`, `Return only these fields: ${fields}.`,
-        'Use every pseudonym exactly as provided. Return one object per pseudonym.',
-        'Do not invent, modify, or omit pseudonyms. Do not include real names or identifying information.',
-        'Do not include markdown or explanatory text.',
-      ].join('\n')
-    : [
-        'OUTPUT FORMAT', `First line must be exactly:`, `SESSION ID: ${sessionId}`,
-        `Then return exactly one line for each pseudonym: <pseudonym> -> <choice>`,
-        `Return only these output fields: ${fields}.`,
-        'Use each pseudonym exactly as provided. Do not invent, modify, or omit pseudonyms.',
-        'Do not include real names or identifying information. Do not use a markdown table or explanatory text.',
-      ].join('\n');
+  if (format === 'json') return [
+    'OUTPUT FORMAT', 'Return ONLY a JSON object.',
+    `{"sessionId":"${sessionId}","results":[{${outputFields.map(f => `"${f}":"<value>"`).join(',')}}]}`,
+    `Set sessionId exactly to: ${sessionId}`, `Return only these fields: ${fields}.`,
+    'Use every pseudonym exactly as provided. Return one object per pseudonym.',
+    'Do not invent, modify, or omit pseudonyms. Do not include real names or identifying information.',
+    'Do not include markdown or explanatory text.',
+  ].join('\n');
+  if (format === 'tsv') return [
+    'OUTPUT FORMAT',
+    `First line must be exactly: SESSION ID:\t${sessionId}`,
+    `Then return a tab-separated table with these columns: ${fields}.`,
+    'The pseudonym column must be present and must contain every pseudonym exactly once.',
+    'Do not invent, modify, or omit pseudonyms. Do not include real names or identifying information.',
+    'Do not include markdown or explanatory text.',
+  ].join('\n');
+  return [
+    'OUTPUT FORMAT', `First line must be exactly: SESSION ID: ${sessionId}`,
+    `Then return exactly one line for each pseudonym: <pseudonym> -> <choice>`,
+    `Return only these output fields: ${fields}.`,
+    'Use each pseudonym exactly as provided. Do not invent, modify, or omit pseudonyms.',
+    'Do not include real names or identifying information. Do not use a markdown table or explanatory text.',
+  ].join('\n');
 }
 
 function tsvCell(value: unknown): string {
   if (value === null || value === undefined) return '';
-  return String(value).replace(/\r?\n/g, ' ');
+  return String(value).replace(/\r?\n/g, ' ').replace(/\t/g, ' ');
 }
 
 export function pseudonymizedTsv(rows: Record<string, unknown>[]): string {
@@ -34,9 +41,7 @@ export function pseudonymizedTsv(rows: Record<string, unknown>[]): string {
 function expandPromptTokens(task: string, rows: Record<string, unknown>[]): string {
   return task
     .replace(/\{\{pseudonymized values\}\}/gi, () => [
-      '--- PSEUDONYMIZED DATA ---',
-      pseudonymizedTsv(rows),
-      '--- END PSEUDONYMIZED DATA ---',
+      '--- PSEUDONYMIZED DATA ---', pseudonymizedTsv(rows), '--- END PSEUDONYMIZED DATA ---',
     ].join('\n'))
     .replace(/\{\{([^{}]+)\}\}/g, (_, column: string) => {
       const name = column.trim();
@@ -45,7 +50,7 @@ function expandPromptTokens(task: string, rows: Record<string, unknown>[]): stri
     });
 }
 
-export function buildPrompt(rows: unknown[], task: string, format: ResponseFormat = 'lines', sessionId?: string, schema?: DatasetSchema): string {
+export function buildPrompt(rows: unknown[], task: string, format: ResponseFormat = 'tsv', sessionId?: string, schema?: DatasetSchema): string {
   const id = sessionId ?? generateSessionId();
   const outputFields = schema?.output.map(f => f.name) ?? ['pseudonym', 'choice'];
   const safeRows = rows.filter((row): row is Record<string, unknown> => !!row && typeof row === 'object');
