@@ -98,7 +98,8 @@ export const translations = {
 
     aiOutputTitle: 'AI output',
     aiFieldNameLabel: 'AI-generated output field name',
-    aiFieldHelper: 'Press Enter to add a new AI-generated field',
+    aiFieldHelper: 'Press Enter or tap Add for a new AI-generated field',
+    addField: 'Add',
 
     generatedPromptTitle: 'Generated AI prompt',
     aiReplyFormatLabel: 'AI reply format:',
@@ -215,7 +216,8 @@ export const translations = {
 
     aiOutputTitle: 'Tekoälyn tulostus',
     aiFieldNameLabel: 'Tekoälyn tuottaman kentän nimi',
-    aiFieldHelper: 'Lisää uusi tekoälyn tuottama kenttä painamalla Enter',
+    aiFieldHelper: 'Paina Enter tai napauta Lisää saadaksesi uuden tekoälyn tuottaman kentän',
+    addField: 'Lisää',
 
     generatedPromptTitle: 'Luotu tekoälykehote',
     aiReplyFormatLabel: 'Tekoälyn vastauksen muoto:',
@@ -332,7 +334,8 @@ export const translations = {
 
     aiOutputTitle: 'AI-utdata',
     aiFieldNameLabel: 'Namn på AI-genererat utdatafält',
-    aiFieldHelper: 'Tryck Enter för att lägga till ett nytt AI-genererat fält',
+    aiFieldHelper: 'Tryck Enter eller tryck på Lägg till för ett nytt AI-genererat fält',
+    addField: 'Lägg till',
 
     generatedPromptTitle: 'Genererad AI-prompt',
     aiReplyFormatLabel: 'Svarsformat för AI:',
