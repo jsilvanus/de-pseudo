@@ -1,5 +1,11 @@
 import type { DatasetSchema, ResponseFormat } from './types';
 
+const COMMON_IDENTITY_COLUMNS = new Set([
+  'username', 'user name', 'name', 'full name', 'fullname', 'first name', 'last name',
+  'email', 'e-mail', 'phone', 'telephone', 'mobile', 'address', 'street address',
+  'postal address', 'ssn', 'social security number',
+]);
+
 export function responseInstructions(format: ResponseFormat = 'tsv', sessionId = '<session-id>', outputFields: string[] = ['pseudonym', 'choice']): string {
   const fields = outputFields.join(', ');
   if (format === 'json') return [
@@ -38,6 +44,28 @@ export function pseudonymizedTsv(rows: Record<string, unknown>[]): string {
   return [columns.map(tsvCell).join('\t'), ...rows.map(row => columns.map(column => tsvCell(row[column])).join('\t'))].join('\n');
 }
 
+function sanitizeRows(rows: Record<string, unknown>[], schema?: DatasetSchema): Record<string, unknown>[] {
+  return rows.map(row => {
+    const safe: Record<string, unknown> = {};
+    if (typeof row.pseudonym === 'string') safe.pseudonym = row.pseudonym;
+
+    for (const [name, value] of Object.entries(row)) {
+      if (name === 'pseudonym') continue;
+      if (schema) {
+        const column = schema.columns.find(c => c.name === name);
+        // Only explicitly retained/reference data is allowed into the AI payload.
+        if (!column || column.mode === 'pseudonymize' || column.mode === 'remove') continue;
+      } else if (COMMON_IDENTITY_COLUMNS.has(name.trim().toLowerCase())) {
+        // Conservative fallback for callers that provide already-pseudonymized rows
+        // without a schema. A schema remains the authoritative way to classify fields.
+        continue;
+      }
+      safe[name] = value;
+    }
+    return safe;
+  });
+}
+
 function expandPromptTokens(task: string, rows: Record<string, unknown>[]): string {
   return task
     .replace(/\{\{pseudonymized values\}\}/gi, () => [
@@ -53,7 +81,8 @@ function expandPromptTokens(task: string, rows: Record<string, unknown>[]): stri
 export function buildPrompt(rows: unknown[], task: string, format: ResponseFormat = 'tsv', sessionId?: string, schema?: DatasetSchema): string {
   const id = sessionId ?? generateSessionId();
   const outputFields = schema?.output.map(f => f.name) ?? ['pseudonym', 'choice'];
-  const safeRows = rows.filter((row): row is Record<string, unknown> => !!row && typeof row === 'object');
+  const objectRows = rows.filter((row): row is Record<string, unknown> => !!row && typeof row === 'object');
+  const safeRows = sanitizeRows(objectRows, schema);
   const expandedTask = expandPromptTokens(task.trim(), safeRows);
   return [`SESSION ID: ${id}`, '', expandedTask, '', responseInstructions(format, id, outputFields)].join('\n');
 }
