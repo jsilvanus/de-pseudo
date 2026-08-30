@@ -6,14 +6,6 @@ const input = [
   ['Mary Smith', 'pizza', 'John Johnson'],
 ].map(row => row.join('\t')).join('\n');
 
-async function loadDataset(page: import('@playwright/test').Page) {
-  await page.goto('/');
-  await page.getByLabel('Load clipboard').click();
-  await page.evaluate((value) => { Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { readText: async () => value, writeText: async () => undefined } }); }, input);
-  // Clipboard permission is unavailable in some CI browsers; the file-free path is tested by calling the parser UI through its normal control.
-  await page.getByLabel('Load clipboard').click();
-}
-
 test.describe('de-pseudo browser workflow', () => {
   test('pseudonymizes tabular input and keeps real identities out of the generated prompt', async ({ page }) => {
     await page.goto('/');
