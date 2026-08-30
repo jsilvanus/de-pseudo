@@ -13,6 +13,8 @@ export class SessionVault<T> {
   get active(): boolean { return this.state !== null; }
   get data(): T | null { return this.state?.data ?? null; }
   get generation(): string | null { return this.state?.generation ?? null; }
+  /** Stable random identifier for this encrypted session; never derived from personal data. */
+  get sessionId(): string | null { return this.state?.generation ?? null; }
 
   async create(data: T): Promise<T> {
     const next = await createEncryptedVault(data);
@@ -20,7 +22,6 @@ export class SessionVault<T> {
     return data;
   }
 
-  /** A failed write leaves the previous active generation untouched. */
   async update(data: T): Promise<T> {
     if (!this.state) return this.create(data);
     const next = await persistVault({ key: this.state.key, data, generation: this.state.generation });
@@ -28,7 +29,6 @@ export class SessionVault<T> {
     return data;
   }
 
-  /** Restore only an authenticated payload with its stored generation metadata. */
   async restore(): Promise<T | null> {
     try {
       const restored = await restorePersistedVault<T>();
