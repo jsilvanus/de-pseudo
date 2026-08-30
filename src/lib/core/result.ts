@@ -26,22 +26,20 @@ export function parseJson(text: string): ParsedResult[] {
   return value.map((item, index) => {
     if (!item || typeof item !== 'object') throw new Error(`Invalid result at index ${index}`);
     const r = item as Record<string, unknown>;
-    if (typeof r.pseudonym !== 'string' || !r.pseudonym || typeof r.choice !== 'string') {
-      throw new Error(`Invalid result at index ${index}`);
-    }
+    if (typeof r.pseudonym !== 'string' || !r.pseudonym || typeof r.choice !== 'string') throw new Error(`Invalid result at index ${index}`);
     return { pseudonym: r.pseudonym, choice: r.choice };
   });
 }
 
 export function parseSessionResponse(text: string, format: ResponseFormat, expectedSessionId: string): ParsedResult[] {
-  assertSessionId(text, expectedSessionId);
   if (format === 'json') {
     const value: unknown = JSON.parse(text);
     if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Expected a JSON response object');
     const r = value as Record<string, unknown>;
-    if (r.sessionId !== expectedSessionId || !Array.isArray(r.results)) throw new Error('Invalid session response');
+    if (r.sessionId !== expectedSessionId || !Array.isArray(r.results)) throw new Error('AI response has an invalid session ID');
     return parseJson(JSON.stringify(r.results));
   }
+  assertSessionId(text, expectedSessionId);
   return parseLines(text);
 }
 
@@ -56,10 +54,5 @@ export function validateResults(results: ParsedResult[], expected: string[]): Va
     else if (seen.has(result.pseudonym)) duplicatePseudonyms.push(result.pseudonym);
     else { seen.add(result.pseudonym); valid.push(result); }
   }
-  return {
-    valid,
-    unknown,
-    duplicatePseudonyms: [...new Set(duplicatePseudonyms)],
-    missingPseudonyms: expected.filter(p => !seen.has(p)),
-  };
+  return { valid, unknown, duplicatePseudonyms: [...new Set(duplicatePseudonyms)], missingPseudonyms: expected.filter(p => !seen.has(p)) };
 }
