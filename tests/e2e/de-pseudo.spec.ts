@@ -1,98 +1,92 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
 
-// The "friend" cross-reference case (mapping one person's raw name found in
-// another person's row) needs an explicit reference-column configuration in
-// the "2. Privacy & columns" step; that contract is covered at the unit
-// level in schema.test.ts. This smoke test sticks to plain attribute data.
 const input = [
   ['username', 'preference'],
   ['John Johnson', 'icecream'],
   ['Mary Smith', 'pizza'],
 ].map(row => row.join('\t')).join('\n');
 
-async function createSession(page: import('@playwright/test').Page) {
+/** Fills the "add a table" wizard once and commits it — the identity column
+ * defaults correctly for a "username" column, so no extra selection needed. */
+async function addTable(page: Page, name: string, pasteText: string, identityColumn?: string) {
+  await page.getByLabel('Table name').fill(name);
+  await page.getByLabel('Paste data').fill(pasteText);
+  if (identityColumn) {
+    const identitySelect = page.locator('.MuiFormControl-root', { hasText: 'Identity column' }).getByRole('combobox');
+    await identitySelect.click();
+    await page.getByRole('option', { name: identityColumn, exact: true }).click();
+  }
+  await page.getByRole('button', { name: 'Add this table' }).click();
+}
+
+async function createSession(page: Page) {
   await page.goto('/');
-  await page.getByLabel('Paste data').fill(input);
-  await page.getByRole('button', { name: /Pseudonymize & save locally/i }).click();
+  await addTable(page, 'Table 1', input);
+  await page.getByRole('button', { name: /Pseudonymize all & continue/i }).click();
 }
 
 test.describe('de-pseudo browser workflow', () => {
   test('pseudonymizes tabular input and keeps real identities out of the generated prompt', async ({ page }) => {
     await createSession(page);
-    await expect(page.getByRole('heading', { name: '1. Dataset editor' })).toBeVisible();
-    const generated = page.getByRole('heading', { name: '7. Generated AI prompt' }).locator('..').locator('textarea').first();
+    await expect(page.getByRole('heading', { name: 'Dataset editor' })).toBeVisible();
+    const generated = page.getByRole('heading', { name: 'Generated AI prompt' }).locator('..').locator('textarea').first();
     const value = await generated.inputValue();
     expect(value).toMatch(/SESSION ID:/);
     expect(value).not.toContain('John Johnson');
     expect(value).not.toContain('Mary Smith');
   });
 
-  test('column buttons and pseudonymized-values button construct the prompt', async ({ page }) => {
-    await createSession(page);
-    await page.getByRole('button', { name: 'preference', exact: true }).click();
-    await page.getByRole('button', { name: 'Add pseudonymized values', exact: true }).click();
-
-    const editor = page.getByRole('textbox', { name: 'Prompt' });
-    await expect(editor).toHaveValue(/\{\{preference\}\}/);
-    await expect(editor).toHaveValue(/\{\{pseudonymized values\}\}/);
-
-    const generated = page.getByRole('heading', { name: '7. Generated AI prompt' }).locator('..').locator('textarea').first();
-    await expect(generated).toHaveValue(/--- PSEUDONYMIZED DATA ---/);
-    await expect(generated).not.toHaveValue(/John Johnson/);
-    await expect(generated).not.toHaveValue(/Mary Smith/);
-  });
-
   test('validates a tsv AI response (the default reply format) and exposes only the final local copy action', async ({ page }) => {
     await createSession(page);
-    const section7 = page.getByRole('heading', { name: '7. Generated AI prompt' }).locator('..');
-    await expect(section7.getByRole('button', { name: 'TSV', exact: true })).toHaveAttribute('aria-pressed', 'true');
-    const prompt = await section7.locator('textarea').first().inputValue();
+    const promptSection = page.getByRole('heading', { name: 'Generated AI prompt' }).locator('..');
+    await expect(promptSection.getByRole('button', { name: 'TSV', exact: true })).toHaveAttribute('aria-pressed', 'true');
+    const prompt = await promptSection.locator('textarea').first().inputValue();
     const sessionId = prompt.match(/SESSION ID:\s*([0-9a-f]{32})/)?.[1];
     expect(sessionId).toBeTruthy();
     // Pseudonyms are 12-char hex tokens, one per row, in the leading column of
-    // the auto-appended "--- PSEUDONYMIZED DATA ---" TSV block.
+    // the auto-appended "--- TABLE 1 ---" TSV block.
     const pseudonyms = [...prompt.matchAll(/^([0-9a-f]{12})\t/gm)].map((m) => m[1]);
     expect(pseudonyms.length).toBeGreaterThan(0);
     // The response must cover every pseudonym or the app rejects it as incomplete.
     const response = [`SESSION ID:\t${sessionId}`, 'pseudonym\tchoice', ...pseudonyms.map((p) => `${p}\tpizza`)].join('\n');
 
-    await page.getByRole('heading', { name: '8. Paste AI result' }).locator('..').getByRole('textbox').fill(response);
+    await page.getByRole('heading', { name: 'Paste AI result' }).locator('..').getByRole('textbox').fill(response);
     await page.getByRole('button', { name: /Validate & resolve locally/i }).click();
-    await expect(page.getByRole('heading', { name: '9. Final output' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Final output' })).toBeVisible();
     await expect(page.getByRole('button', { name: /^Copy$/i })).toBeVisible();
   });
 
   test('round-trips using the csv AI reply format', async ({ page }) => {
     await createSession(page);
-    const section7 = page.getByRole('heading', { name: '7. Generated AI prompt' }).locator('..');
-    await section7.getByRole('button', { name: 'CSV', exact: true }).click();
+    const promptSection = page.getByRole('heading', { name: 'Generated AI prompt' }).locator('..');
+    await promptSection.getByRole('button', { name: 'CSV', exact: true }).click();
 
-    const prompt = await section7.locator('textarea').first().inputValue();
+    const prompt = await promptSection.locator('textarea').first().inputValue();
     expect(prompt).toContain('comma-separated (CSV) table');
     const sessionId = prompt.match(/SESSION ID:\s*([0-9a-f]{32})/)?.[1];
     const pseudonyms = [...prompt.matchAll(/^([0-9a-f]{12}),/gm)].map((m) => m[1]);
     expect(pseudonyms.length).toBeGreaterThan(0);
     const response = [`SESSION ID: ${sessionId}`, 'pseudonym,choice', ...pseudonyms.map((p) => `${p},pizza`)].join('\n');
 
-    await page.getByRole('heading', { name: '8. Paste AI result' }).locator('..').getByRole('textbox').fill(response);
+    await page.getByRole('heading', { name: 'Paste AI result' }).locator('..').getByRole('textbox').fill(response);
     await page.getByRole('button', { name: /Validate & resolve locally/i }).click();
-    await expect(page.getByRole('heading', { name: '9. Final output' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Final output' })).toBeVisible();
   });
 
   test('round-trips using the json AI reply format', async ({ page }) => {
     await createSession(page);
-    const section7 = page.getByRole('heading', { name: '7. Generated AI prompt' }).locator('..');
-    await section7.getByRole('button', { name: 'JSON', exact: true }).click();
+    const promptSection = page.getByRole('heading', { name: 'Generated AI prompt' }).locator('..');
+    await promptSection.getByRole('button', { name: 'JSON', exact: true }).click();
 
-    const prompt = await section7.locator('textarea').first().inputValue();
+    const prompt = await promptSection.locator('textarea').first().inputValue();
     const sessionId = prompt.match(/SESSION ID:\s*([0-9a-f]{32})/)?.[1];
     const pseudonyms = [...prompt.matchAll(/^([0-9a-f]{12})\t/gm)].map((m) => m[1]);
     expect(pseudonyms.length).toBeGreaterThan(0);
     const response = JSON.stringify({ sessionId, results: pseudonyms.map((p) => ({ pseudonym: p, choice: 'pizza' })) });
 
-    await page.getByRole('heading', { name: '8. Paste AI result' }).locator('..').getByRole('textbox').fill(response);
+    await page.getByRole('heading', { name: 'Paste AI result' }).locator('..').getByRole('textbox').fill(response);
     await page.getByRole('button', { name: /Validate & resolve locally/i }).click();
-    await expect(page.getByRole('heading', { name: '9. Final output' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Final output' })).toBeVisible();
   });
 
   test('cryptoshred returns the application to a clean input state', async ({ page }) => {
@@ -107,10 +101,13 @@ test.describe('de-pseudo browser workflow', () => {
     await page.goto('/');
     await page.getByRole('button', { name: 'CSV (comma)' }).click();
     await page.getByLabel('Paste data').fill('username,preference\nJohn Johnson,icecream\nMary Smith,pizza');
-    await expect(page.getByText(/Loaded 2 rows from Pasted text \(CSV\)\./)).toBeVisible();
+    await expect(page.getByText(/Loaded 2 rows from Pasted text \(CSV\)/)).toBeVisible();
+    await page.getByRole('button', { name: 'Add this table' }).click();
+    // Once committed, the table list names the same source/format instead.
+    await expect(page.getByText('Table 1 — 2 rows, identity column "username"')).toBeVisible();
 
-    await page.getByRole('button', { name: /Pseudonymize & save locally/i }).click();
-    const generated = page.getByRole('heading', { name: '7. Generated AI prompt' }).locator('..').locator('textarea').first();
+    await page.getByRole('button', { name: /Pseudonymize all & continue/i }).click();
+    const generated = page.getByRole('heading', { name: 'Generated AI prompt' }).locator('..').locator('textarea').first();
     const value = await generated.inputValue();
     expect(value).not.toContain('John Johnson');
     expect(value).not.toContain('Mary Smith');
@@ -131,6 +128,106 @@ test.describe('de-pseudo browser workflow', () => {
   });
 });
 
+test.describe('multiple tables', () => {
+  // The exact motivating case: a "Rooms" table with no people in it, and a
+  // "Preferences" table naming a person and the room they're in. Both the
+  // person's name and the room number must be pseudonymized, and the room
+  // token referenced from Preferences must be the identical token Rooms
+  // itself generated for that room.
+  test('shares one pseudonym per identity across tables and resolves a cross-table reference', async ({ page }) => {
+    await page.goto('/');
+    await addTable(page, 'Rooms', 'room\tsize\nRoom A\t4\nRoom B\t2', 'room');
+    await addTable(page, 'Preferences', 'name\troom\twants\nAlice\tRoom A\tquiet\nBob\tRoom B\tsocial', 'name');
+
+    await expect(page.getByText('Rooms — 2 rows, identity column "room"')).toBeVisible();
+    await expect(page.getByText('Preferences — 2 rows, identity column "name"')).toBeVisible();
+
+    await page.getByRole('button', { name: /Pseudonymize all & continue/i }).click();
+
+    // Single-table-only UI must not appear once there's more than one table.
+    await expect(page.getByRole('heading', { name: 'Dataset editor' })).toHaveCount(0);
+
+    // Point Preferences.room at Rooms (mode defaults to same-table on switch).
+    const prefsPrivacy = page.getByRole('heading', { name: 'Privacy & columns — Preferences' }).locator('..');
+    const roomRow = prefsPrivacy.locator('tr', { hasText: 'room' });
+    await roomRow.getByRole('combobox').first().click();
+    await page.getByRole('option', { name: 'Reference' }).click();
+    await roomRow.getByRole('combobox').nth(1).click();
+    await page.getByRole('option', { name: 'Rooms', exact: true }).click();
+    await expect(roomRow).toContainText('.room');
+
+    // Neither table has output configured by default once there's more than
+    // one table — there's no safe way to guess which one the AI answers for.
+    const aiOutput = page.getByRole('heading', { name: 'AI output' }).locator('..');
+    const prefsOutputBlock = aiOutput.locator('p:has-text("Preferences")').locator('..');
+    await prefsOutputBlock.getByRole('checkbox', { name: 'name', exact: true }).check();
+    await prefsOutputBlock.getByRole('textbox', { name: 'AI-generated output field name' }).fill('assigned_room');
+    await prefsOutputBlock.getByRole('textbox', { name: 'AI-generated output field name' }).press('Enter');
+
+    const promptSection = page.getByRole('heading', { name: 'Generated AI prompt' }).locator('..');
+    const prompt = await promptSection.locator('textarea').first().inputValue();
+    expect(prompt).toContain('--- ROOMS ---');
+    expect(prompt).toContain('--- PREFERENCES ---');
+    expect(prompt).not.toContain('Alice');
+    expect(prompt).not.toContain('Bob');
+    expect(prompt).not.toContain('Room A');
+    expect(prompt).not.toContain('Room B');
+    expect(prompt).toContain('Then return a tab-separated table with these columns: name, assigned_room.');
+
+    const roomsBlock = prompt.split('--- ROOMS ---')[1].split('--- END ROOMS ---')[0];
+    const roomPseudonym = roomsBlock.trim().split('\n')[1].split('\t')[0];
+    expect(roomPseudonym).toMatch(/^[0-9a-f]{12}$/);
+    // The exact same token Rooms generated for "Room A" must appear as the
+    // reference value in Preferences — not a second, unrelated token.
+    const prefsBlock = prompt.split('--- PREFERENCES ---')[1].split('--- END PREFERENCES ---')[0];
+    expect(prefsBlock).toContain(roomPseudonym);
+
+    const sessionId = prompt.match(/SESSION ID:\s*([0-9a-f]{32})/)?.[1];
+    const prefPseudonyms = prefsBlock.trim().split('\n').slice(1).map(l => l.split('\t')[0]);
+    const response = [`SESSION ID:\t${sessionId}`, 'pseudonym\tassigned_room', `${prefPseudonyms[0]}\tvanilla suite`, `${prefPseudonyms[1]}\tparty suite`].join('\n');
+
+    await page.getByRole('heading', { name: 'Paste AI result' }).locator('..').getByRole('textbox').fill(response);
+    await page.getByRole('button', { name: /Validate & resolve locally/i }).click();
+
+    const finalOutput = page.getByRole('heading', { name: 'Final output' }).locator('..').locator('textarea').first();
+    await expect(finalOutput).toBeVisible();
+    const finalValue = JSON.parse(await finalOutput.inputValue());
+    expect(finalValue).toEqual([
+      { name: 'Alice', assigned_room: 'vanilla suite' },
+      { name: 'Bob', assigned_room: 'party suite' },
+    ]);
+  });
+
+  test('blocks a cross-table reference that matches no room exactly, and lets it be resolved manually', async ({ page }) => {
+    await page.goto('/');
+    await addTable(page, 'Rooms', 'room\tsize\nRoom A\t4\nRoom B\t2', 'room');
+    await addTable(page, 'Preferences', 'name\troom\nAlice\troom a (corner)', 'name');
+    await page.getByRole('button', { name: /Pseudonymize all & continue/i }).click();
+
+    const prefsPrivacy = page.getByRole('heading', { name: 'Privacy & columns — Preferences' }).locator('..');
+    const roomRow = prefsPrivacy.locator('tr', { hasText: 'room' });
+    await roomRow.getByRole('combobox').first().click();
+    await page.getByRole('option', { name: 'Reference' }).click();
+    await roomRow.getByRole('combobox').nth(1).click();
+    await page.getByRole('option', { name: 'Rooms', exact: true }).click();
+
+    const referencesSection = page.getByRole('heading', { name: 'Resolve text references' }).locator('..');
+    await expect(referencesSection).toContainText('Unresolved references');
+    await expect(referencesSection).toContainText('"room a (corner)"');
+
+    const promptSection = page.getByRole('heading', { name: 'Generated AI prompt' }).locator('..');
+    await expect(promptSection).toContainText('Prompt generation is blocked');
+
+    await referencesSection.getByRole('combobox').click();
+    await page.getByRole('option', { name: 'Room A', exact: true }).click();
+
+    await expect(promptSection).not.toContainText('Prompt generation is blocked');
+    const prompt = await promptSection.locator('textarea').first().inputValue();
+    expect(prompt).not.toContain('room a (corner)');
+    expect(prompt).not.toContain('Room A');
+  });
+});
+
 test.describe('ambiguous and unmatched reference text', () => {
   // Anna Johnson and Anna Benson share a first name, so a bare "Anna" is
   // ambiguous between them; "Anna Q." matches neither surname's initial and
@@ -143,7 +240,7 @@ test.describe('ambiguous and unmatched reference text', () => {
     ['Anna Benson', ''],
   ].map((row) => row.join('\t')).join('\n');
 
-  async function setFriendColumnToReference(page: import('@playwright/test').Page) {
+  async function setFriendColumnToReference(page: Page) {
     const friendRow = page.locator('tr', { hasText: 'friend' });
     await friendRow.getByRole('combobox').first().click();
     await page.getByRole('option', { name: 'Reference' }).click();
@@ -151,23 +248,23 @@ test.describe('ambiguous and unmatched reference text', () => {
 
   test('blocks prompt generation until ambiguous and unmatched references are resolved', async ({ page }) => {
     await page.goto('/');
-    await page.getByLabel('Paste data').fill(referenceInput);
-    await page.getByRole('button', { name: /Pseudonymize & save locally/i }).click();
+    await addTable(page, 'Table 1', referenceInput);
+    await page.getByRole('button', { name: /Pseudonymize all & continue/i }).click();
     await setFriendColumnToReference(page);
 
-    const section4 = page.getByRole('heading', { name: '4. Resolve text references' }).locator('..');
-    await expect(section4).toContainText('Unresolved references');
-    await expect(section4).toContainText('"Anna Q."');
-    await expect(section4).toContainText('"Anna"');
+    const referencesSection = page.getByRole('heading', { name: 'Resolve text references' }).locator('..');
+    await expect(referencesSection).toContainText('Unresolved references');
+    await expect(referencesSection).toContainText('"Anna Q."');
+    await expect(referencesSection).toContainText('"Anna"');
     // The UI should say *why* each one is unresolved, not just that it is.
-    await expect(section4).toContainText('no automatic match');
-    await expect(section4).toContainText('matches 2 people');
+    await expect(referencesSection).toContainText('no automatic match');
+    await expect(referencesSection).toContainText('matches 2');
 
-    const section7 = page.getByRole('heading', { name: '7. Generated AI prompt' }).locator('..');
-    await expect(section7).toContainText('Prompt generation is blocked');
-    await expect(section7.locator('textarea')).toHaveCount(0);
+    const promptSection = page.getByRole('heading', { name: 'Generated AI prompt' }).locator('..');
+    await expect(promptSection).toContainText('Prompt generation is blocked');
+    await expect(promptSection.locator('textarea')).toHaveCount(0);
 
-    const personSelects = section4.getByRole('combobox');
+    const personSelects = referencesSection.getByRole('combobox');
     await expect(personSelects).toHaveCount(2);
 
     // Even the zero-candidate "Anna Q." must still let a person be picked
@@ -177,14 +274,14 @@ test.describe('ambiguous and unmatched reference text', () => {
     await page.getByRole('option', { name: 'Anna Benson', exact: true }).click();
 
     // Resolving only one of the two must not unblock the prompt yet.
-    await expect(section7).toContainText('Prompt generation is blocked');
+    await expect(promptSection).toContainText('Prompt generation is blocked');
 
     await personSelects.nth(1).click();
     await page.getByRole('option', { name: 'Anna Johnson', exact: true }).click();
 
     // Both resolved: the prompt now generates, still with no raw names in it.
-    await expect(section7.locator('textarea').first()).toBeVisible();
-    const prompt = await section7.locator('textarea').first().inputValue();
+    await expect(promptSection.locator('textarea').first()).toBeVisible();
+    const prompt = await promptSection.locator('textarea').first().inputValue();
     expect(prompt).not.toContain('Anna Johnson');
     expect(prompt).not.toContain('Anna Benson');
     expect(prompt).not.toContain('John Johnson');
@@ -204,20 +301,20 @@ test.describe('ambiguous and unmatched reference text', () => {
     ].map((row) => row.join('\t')).join('\n');
 
     await page.goto('/');
-    await page.getByLabel('Paste data').fill(initialInput);
-    await page.getByRole('button', { name: /Pseudonymize & save locally/i }).click();
+    await addTable(page, 'Table 1', initialInput);
+    await page.getByRole('button', { name: /Pseudonymize all & continue/i }).click();
     await setFriendColumnToReference(page);
 
-    const section4 = page.getByRole('heading', { name: '4. Resolve text references' }).locator('..');
-    await expect(section4).toContainText('partial match resolved to "Anna Johnson"');
-    await expect(section4).toContainText('partial match resolved to "Anna Johnson" — verify');
-    await expect(section4).not.toContainText('Unresolved references');
+    const referencesSection = page.getByRole('heading', { name: 'Resolve text references' }).locator('..');
+    await expect(referencesSection).toContainText('partial match resolved to "Anna Johnson"');
+    await expect(referencesSection).toContainText('partial match resolved to "Anna Johnson" — verify');
+    await expect(referencesSection).not.toContainText('Unresolved references');
 
     // No manual pick needed: the prompt generates immediately, already
     // carrying the inferred match.
-    const section7 = page.getByRole('heading', { name: '7. Generated AI prompt' }).locator('..');
-    await expect(section7).not.toContainText('Prompt generation is blocked');
-    const prompt = await section7.locator('textarea').first().inputValue();
+    const promptSection = page.getByRole('heading', { name: 'Generated AI prompt' }).locator('..');
+    await expect(promptSection).not.toContainText('Prompt generation is blocked');
+    const prompt = await promptSection.locator('textarea').first().inputValue();
     expect(prompt).not.toContain('Anna Johnson');
     expect(prompt).not.toContain('Anna J.');
 

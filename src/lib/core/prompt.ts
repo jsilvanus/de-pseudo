@@ -128,6 +128,44 @@ export function buildPrompt(rows: unknown[], task: string, format: ResponseForma
   return [`SESSION ID: ${id}`, '', expandedTask, '', responseInstructions(format, id, outputFields)].join('\n');
 }
 
+/**
+ * Multi-table counterpart to buildPrompt: renders each table as its own
+ * clearly labeled data block, all sharing one SESSION ID and one set of
+ * response-format instructions. Only tables with at least one configured
+ * output field contribute pseudonyms to that contract — a supporting table
+ * (e.g. room sizes, referenced from a preferences table) is visible to the
+ * AI as context but the AI isn't asked to answer for each of its rows,
+ * unless the caller explicitly gives it output fields too.
+ */
+export function buildMultiTablePrompt(
+  tables: { name: string; rows: unknown[]; schema?: DatasetSchema }[],
+  task: string,
+  format: ResponseFormat = 'tsv',
+  sessionId?: string,
+): string {
+  const id = sessionId ?? generateSessionId();
+  const contributingFields = [...new Set(tables.flatMap(t => (t.schema?.output.length ? t.schema.output.map(f => f.name) : [])))];
+  const outputFields = contributingFields.length ? contributingFields : ['pseudonym', 'choice'];
+
+  const delimiter = format === 'csv' ? ',' : '\t';
+  const blocks = tables.map(t => {
+    const objectRows = t.rows.filter((row): row is Record<string, unknown> => !!row && typeof row === 'object');
+    const safeRows = sanitizeRows(objectRows, t.schema);
+    const label = t.name.toUpperCase();
+    return [`--- ${label} ---`, pseudonymizedTable(safeRows, delimiter), `--- END ${label} ---`].join('\n');
+  });
+  const allBlocks = blocks.join('\n\n');
+
+  const trimmedTask = task.trim();
+  const hasDataToken = /\{\{pseudonymized values\}\}/i.test(trimmedTask);
+  let expandedTask = trimmedTask.replace(/\{\{pseudonymized values\}\}/gi, () => allBlocks);
+  // As with the single-table prompt, the data is always visible to the AI
+  // even if the task text never references it via a token.
+  if (!hasDataToken) expandedTask = [expandedTask, allBlocks].join('\n\n');
+
+  return [`SESSION ID: ${id}`, '', expandedTask, '', responseInstructions(format, id, outputFields)].join('\n');
+}
+
 export function generateSessionId(): string {
   if (!globalThis.crypto?.getRandomValues) throw new Error('A cryptographically secure random source is required');
   const bytes = globalThis.crypto.getRandomValues(new Uint8Array(16));
