@@ -33,7 +33,7 @@ jobs:
         run: npm install --package-lock-only --ignore-scripts
 
       - name: Show lockfile status
-        run: git diff -- package-lock.json
+        run: git status --short -- package-lock.json && git diff -- package-lock.json
 
       - name: Commit updated lockfile
         if: inputs.commit_changes != false
