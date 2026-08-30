@@ -47,6 +47,12 @@ export default function App() {
     }).catch(() => undefined);
   }, []);
 
+  // Keep the encrypted vault in sync with every schema edit (privacy mode,
+  // reference targets, AI output fields) — not just the initial
+  // pseudonymize — so a page reload restores the configuration as it was
+  // left, not just the raw pseudonymized data.
+  useEffect(() => { if (dataset) vault.update(dataset).catch(() => undefined); }, [dataset]);
+
   // Once pseudonymized, raw values are reconstructed from the identity
   // mapping rather than kept in separate state — this stays correct even
   // after a restored session, where the pre-pseudonymize staging list above
@@ -212,7 +218,7 @@ export default function App() {
       <Typography variant="body2" color="text.secondary">Names and other identifiers are swapped for random tokens before anything is copied out to an AI. You can load more than one table — a shared value like a room number gets the exact same token wherever it's referenced. The AI only ever sees tokens plus whatever data you explicitly allow through; only this browser tab holds the mapping back to real identities, and only until you shred it.</Typography>
       <Alert severity="info" icon={false}>🔍 <b>Note:</b> this provides <b>pseudonymization</b> — and, depending on what other data travels alongside it, potentially <b>anonymization</b> — of what you send to an AI system. Pseudonymization alone does not guarantee anonymity: free text, rare attribute combinations, or surrounding context can still make someone identifiable even without their name. Review what you send before it leaves this tab.</Alert>
     </Stack></Paper>
-    {restored && <Alert severity="info">Encrypted local session restored. Identity mapping remains local.</Alert>}{error && <Alert severity={error === 'Session shredded.' ? 'success' : 'error'}>{error}</Alert>}
+    {restored && dataset && <Alert severity="info">Encrypted local session restored: {dataset.tables.map(t => t.name).join(', ')}. Identity mapping remains local.</Alert>}{error && <Alert severity={error === 'Session shredded.' ? 'success' : 'error'}>{error}</Alert>}
 
     {!dataset && <Paper sx={{ p: 3 }}><Stack spacing={2}>
       <Typography variant="h5">1. Load data</Typography>

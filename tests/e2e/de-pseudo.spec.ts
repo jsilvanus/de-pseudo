@@ -226,6 +226,47 @@ test.describe('multiple tables', () => {
     expect(prompt).not.toContain('room a (corner)');
     expect(prompt).not.toContain('Room A');
   });
+
+  test('restores every table, correctly, after a fresh page load', async ({ page, context }) => {
+    await page.goto('/');
+    await addTable(page, 'Rooms', 'room\tsize\nRoom A\t4\nRoom B\t2', 'room');
+    await addTable(page, 'Preferences', 'name\troom\twants\nAlice\tRoom A\tquiet\nBob\tRoom B\tsocial', 'name');
+    await page.getByRole('button', { name: /Pseudonymize all & continue/i }).click();
+
+    // Enable output for Preferences so there's a real reply contract to
+    // resolve against once restored — otherwise every table's pseudonym
+    // would be "expected" by default, which isn't what this test is about.
+    const aiOutput = page.getByRole('heading', { name: 'AI output' }).locator('..');
+    const prefsOutputBlock = aiOutput.locator('p:has-text("Preferences")').locator('..');
+    await prefsOutputBlock.getByRole('checkbox', { name: 'name', exact: true }).check();
+
+    const promptBefore = await page.getByRole('heading', { name: 'Generated AI prompt' }).locator('..').locator('textarea').first().inputValue();
+    const sessionId = promptBefore.match(/SESSION ID:\s*([0-9a-f]{32})/)?.[1];
+
+    // A brand-new page in the same browser context: no in-memory React state
+    // carries over, only whatever is in this origin's IndexedDB.
+    const fresh = await context.newPage();
+    await fresh.goto('/');
+
+    await expect(fresh.getByText('Encrypted local session restored: Rooms, Preferences.')).toBeVisible();
+    await expect(fresh.getByRole('heading', { name: 'Privacy & columns — Rooms' })).toBeVisible();
+    await expect(fresh.getByRole('heading', { name: 'Privacy & columns — Preferences' })).toBeVisible();
+
+    const promptAfter = fresh.getByRole('heading', { name: 'Generated AI prompt' }).locator('..').locator('textarea').first();
+    const promptAfterValue = await promptAfter.inputValue();
+    expect(promptAfterValue).toContain(`SESSION ID: ${sessionId}`);
+    expect(promptAfterValue).toContain('--- ROOMS ---');
+    expect(promptAfterValue).toContain('--- PREFERENCES ---');
+
+    // The restored session resolves an AI response exactly like the original
+    // one would have, using the session ID it came back with.
+    const prefsBlock = promptAfterValue.split('--- PREFERENCES ---')[1].split('--- END PREFERENCES ---')[0];
+    const prefPseudonyms = prefsBlock.trim().split('\n').slice(1).map(l => l.split('\t')[0]);
+    const response = [`SESSION ID:\t${sessionId}`, 'pseudonym\tchoice', `${prefPseudonyms[0]}\tvanilla`, `${prefPseudonyms[1]}\tparty`].join('\n');
+    await fresh.getByRole('heading', { name: 'Paste AI result' }).locator('..').getByRole('textbox').fill(response);
+    await fresh.getByRole('button', { name: /Validate & resolve locally/i }).click();
+    await expect(fresh.getByRole('heading', { name: 'Final output' })).toBeVisible();
+  });
 });
 
 test.describe('ambiguous and unmatched reference text', () => {
