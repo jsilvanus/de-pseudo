@@ -13,6 +13,25 @@ export function assertSessionId(text: string, expected: string): void {
   if (actual !== expected) throw new Error('AI response belongs to a different session');
 }
 
+function parseDelimitedRows(text: string, delimiter: string): ParsedResult[] {
+  const lines = text.split(/\r?\n/).map(l => l.trimEnd()).filter(Boolean);
+  const data = lines.filter(l => !/^SESSION ID:/i.test(l));
+  if (!data.length) return [];
+  const header = data[0].split(delimiter).map(v => v.trim());
+  const pseudoIndex = header.findIndex(v => v.toLowerCase() === 'pseudonym');
+  if (pseudoIndex < 0) throw new Error('TSV response must contain a pseudonym column');
+  return data.slice(1).map((line, index) => {
+    const values = line.split(delimiter);
+    const pseudonym = (values[pseudoIndex] ?? '').trim();
+    if (!pseudonym) throw new Error(`TSV result row ${index + 2} has no pseudonym`);
+    const result: ParsedResult = { pseudonym, choice: '' };
+    header.forEach((name, i) => { if (name && name.toLowerCase() !== 'pseudonym') result[name] = (values[i] ?? '').trim(); });
+    const choice = result.choice ?? result[header.find(h => h.toLowerCase() !== 'pseudonym') ?? 'choice'] ?? '';
+    result.choice = String(choice);
+    return result;
+  });
+}
+
 export function parseLines(text: string): ParsedResult[] {
   return text.split(/\r?\n/).flatMap(line => {
     const match = line.trim().match(/^([^\s]+)\s*->\s*(.+)$/);
@@ -38,6 +57,10 @@ export function parseSessionResponse(text: string, format: ResponseFormat, expec
     const r = value as Record<string, unknown>;
     if (r.sessionId !== expectedSessionId || !Array.isArray(r.results)) throw new Error('AI response has an invalid session ID');
     return parseJson(JSON.stringify(r.results));
+  }
+  if (format === 'tsv') {
+    assertSessionId(text, expectedSessionId);
+    return parseDelimitedRows(text, '\t');
   }
   assertSessionId(text, expectedSessionId);
   return parseLines(text);
