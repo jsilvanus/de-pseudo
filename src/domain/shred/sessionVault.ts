@@ -19,22 +19,40 @@ export class SessionVault<T> {
   }
 
   async create(data: T): Promise<T> {
-    this.state = await createEncryptedVault(data);
+    const next = await createEncryptedVault(data);
+    this.state = next;
     return data;
   }
 
+  /**
+   * Persist a complete replacement atomically from the application's point of view.
+   * If encryption/storage fails, the previous in-memory state remains usable.
+   */
   async update(data: T): Promise<T> {
     if (!this.state) return this.create(data);
-    this.state = await persistVault({ key: this.state.key, data });
+    const next = await persistVault({ key: this.state.key, data });
+    this.state = next;
     return data;
   }
 
+  /**
+   * Restore only when both the encrypted payload and its key are available and
+   * authenticated decryption succeeds. Any failure leaves this vault inactive.
+   */
   async restore(): Promise<T | null> {
-    this.state = await restorePersistedVault<T>();
-    return this.state?.data ?? null;
+    try {
+      const restored = await restorePersistedVault<T>();
+      this.state = restored;
+      return restored?.data ?? null;
+    } catch {
+      this.state = null;
+      return null;
+    }
   }
 
+  /** Clear local persistence first; only then release the active key reference. */
   async shred(): Promise<void> {
-    this.state = await cryptoshred(this.state);
+    await cryptoshred(this.state);
+    this.state = null;
   }
 }
