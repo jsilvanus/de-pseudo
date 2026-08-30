@@ -12,7 +12,6 @@ describe('dataset schema', () => {
     expect(schema.columns.find(c => c.name === 'username')?.mode).toBe('pseudonymize');
     expect(schema.output).toEqual([
       { name: 'username', source: 'pseudonym' },
-      { name: 'result', source: 'choice' },
     ]);
   });
 

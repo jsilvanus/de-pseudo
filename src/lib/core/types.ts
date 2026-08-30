@@ -24,6 +24,6 @@ export type PseudonymizedDataset = { rows: PseudonymizedRecord[]; mapping: Ident
 export type NamedPseudonymizedTable = { name: string; rows: PseudonymizedRecord[]; schema: DatasetSchema };
 export type MultiTableDataset = { tables: NamedPseudonymizedTable[]; mapping: IdentityMapping; cellReferences?: TableCellReference[] };
 
-export type ResponseFormat = 'lines' | 'json' | 'tsv' | 'csv';
+export type ResponseFormat = 'lines' | 'json' | 'tsv' | 'csv' | 'psv';
 export type ParsedResult = { pseudonym: string; choice: string; [key: string]: CellValue };
 export type ValidationResult = { valid: ParsedResult[]; unknown: ParsedResult[]; duplicatePseudonyms: string[]; missingPseudonyms: string[] };

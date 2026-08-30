@@ -58,9 +58,10 @@ export function parseSessionResponse(text: string, format: ResponseFormat, expec
     if (r.sessionId !== expectedSessionId || !Array.isArray(r.results)) throw new Error('AI response has an invalid session ID');
     return parseJson(JSON.stringify(r.results));
   }
-  if (format === 'tsv' || format === 'csv') {
+  if (format === 'tsv' || format === 'csv' || format === 'psv') {
     assertSessionId(text, expectedSessionId);
-    return parseDelimitedRows(text, format === 'csv' ? ',' : '\t');
+    const delimiter = format === 'csv' ? ',' : format === 'psv' ? '|' : '\t';
+    return parseDelimitedRows(text, delimiter);
   }
   assertSessionId(text, expectedSessionId);
   return parseLines(text);
