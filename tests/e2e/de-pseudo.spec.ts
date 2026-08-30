@@ -6,24 +6,25 @@ const input = [
   ['Mary Smith', 'pizza', 'John Johnson'],
 ].map(row => row.join('\t')).join('\n');
 
+async function createSession(page: import('@playwright/test').Page) {
+  await page.goto('/');
+  await page.getByLabel('Paste data').fill(input);
+  await page.getByRole('button', { name: /Pseudonymize & save locally/i }).click();
+}
+
 test.describe('de-pseudo browser workflow', () => {
   test('pseudonymizes tabular input and keeps real identities out of the generated prompt', async ({ page }) => {
-    await page.goto('/');
-    await page.getByLabel('Paste data').fill(input);
-    await page.getByRole('button', { name: /Pseudonymize & save locally/i }).click();
-
+    await createSession(page);
     await expect(page.getByRole('heading', { name: '1. Dataset editor' })).toBeVisible();
-    const prompt = page.getByRole('heading', { name: '7. Generated AI prompt' }).locator('..').locator('textarea');
-    await expect(prompt).toHaveValue(/SESSION ID:/);
-    await expect(prompt).not.toHaveValue(/John Johnson/);
-    await expect(prompt).not.toHaveValue(/Mary Smith/);
+    const generated = page.getByRole('heading', { name: '7. Generated AI prompt' }).locator('..').locator('textarea');
+    const value = await generated.inputValue();
+    expect(value).toMatch(/SESSION ID:/);
+    expect(value).not.toContain('John Johnson');
+    expect(value).not.toContain('Mary Smith');
   });
 
   test('column buttons and pseudonymized-values button construct the prompt', async ({ page }) => {
-    await page.goto('/');
-    await page.getByLabel('Paste data').fill(input);
-    await page.getByRole('button', { name: /Pseudonymize & save locally/i }).click();
-
+    await createSession(page);
     await page.getByRole('button', { name: 'preference', exact: true }).click();
     await page.getByRole('button', { name: 'Add pseudonymized values', exact: true }).click();
 
@@ -37,22 +38,24 @@ test.describe('de-pseudo browser workflow', () => {
     await expect(generated).not.toHaveValue(/Mary Smith/);
   });
 
-  test('provides copy controls for pseudonymized data and final output', async ({ page }) => {
-    await page.goto('/');
-    await page.getByLabel('Paste data').fill(input);
-    await page.getByRole('button', { name: /Pseudonymize & save locally/i }).click();
+  test('validates an AI response and exposes only the final local copy action', async ({ page }) => {
+    await createSession(page);
+    const generated = page.getByRole('heading', { name: '7. Generated AI prompt' }).locator('..').locator('textarea');
+    const prompt = await generated.inputValue();
+    const sessionId = prompt.match(/SESSION ID:\s*([0-9a-f]{32})/)?.[1];
+    expect(sessionId).toBeTruthy();
+    const pseudonym = prompt.match(/\n([0-9a-f]{32})\s*$/m)?.[1] ?? prompt.match(/\n([0-9a-f]{32})\s*->/m)?.[1];
+    expect(pseudonym).toBeTruthy();
 
-    await expect(page.getByRole('button', { name: /Copy prompt/i })).toBeVisible();
-    await expect(page.getByRole('button', { name: /Copy pseudonymized data/i })).toBeVisible();
-    await expect(page.getByRole('button', { name: /^Copy$/i })).not.toBeVisible();
+    await page.getByRole('heading', { name: '8. Paste AI result' }).locator('..').getByRole('textbox').fill(`SESSION ID: ${sessionId}\n${pseudonym} -> pizza`);
+    await page.getByRole('button', { name: /Validate & resolve locally/i }).click();
+    await expect(page.getByRole('heading', { name: '9. Final output' })).toBeVisible();
+    await expect(page.getByRole('button', { name: /^Copy$/i })).toBeVisible();
   });
 
   test('cryptoshred returns the application to a clean input state', async ({ page }) => {
-    await page.goto('/');
-    await page.getByLabel('Paste data').fill(input);
-    await page.getByRole('button', { name: /Pseudonymize & save locally/i }).click();
+    await createSession(page);
     await page.getByRole('button', { name: /Shred session/i }).click();
-
     await expect(page.getByRole('heading', { name: '1. Load data' })).toBeVisible();
     await expect(page.getByText('Session shredded.')).toBeVisible();
     await expect(page.getByText('John Johnson')).not.toBeVisible();
