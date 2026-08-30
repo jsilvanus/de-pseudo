@@ -12,11 +12,12 @@ Goal: make CI execute the real test suites reliably.
 - Run TypeScript/build and unit/integration jobs independently.
 - Do not weaken security tests to make CI green.
 
-Status: **Started**.
+Status: **Implemented; awaiting CI verification**.
 
 Implemented:
 - Added a strict Vite-compatible `tsconfig.json` for `src`.
 - Updated Vitest exclusions so Playwright specs are not treated as Vitest tests.
+- Confirmed the repository contains a committed `package-lock.json`.
 
 ## Phase 2 — Broken/stale test contracts and crypto lifecycle
 
@@ -29,7 +30,14 @@ Goal: align tests and implementations without hiding real failures.
 - Add/repair integration coverage for encrypt → restore → shred → failed restore/resolve.
 - Verify the public library API remains clean and extractable.
 
-Status: **Not started**.
+Status: **Implemented; awaiting CI verification**.
+
+Implemented:
+- Migrated obsolete workflow and adversarial resolver tests to the current core API.
+- Repaired cryptoshred integration tests to use the current `loadSession`/`saveSession` vault boundary.
+- Removed the obsolete `localKey`/`loadEncryptedVault` test contract.
+- Added explicit SessionVault lifecycle and session-id tests.
+- Tests clear the active IndexedDB session before each vault lifecycle case.
 
 ## Phase 3 — Prompt privacy boundary / leakage hardening
 
@@ -42,7 +50,14 @@ Goal: guarantee that personal identity data cannot enter an AI prompt accidental
 - Test that final AI output can be resolved locally without sending the mapping or original identity to the AI.
 - Add adversarial leakage tests using names, aliases, reference labels, and prompt-injection-like instructions.
 
-Status: **Not started**.
+Status: **Implemented; awaiting CI verification**.
+
+Implemented:
+- Prompt construction now treats the dataset schema as the authoritative privacy boundary.
+- `pseudonymize` and `remove` columns are excluded from AI payloads even when prompt tokens request them.
+- Common direct-identifier columns are conservatively blocked when no schema is supplied.
+- Added schema-driven regression coverage for identity, kept data, and pseudonymized references.
+- Existing prompt leakage tests remain active and were not weakened.
 
 ## Exit criteria
 
