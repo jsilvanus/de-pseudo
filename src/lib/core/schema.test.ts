@@ -10,7 +10,10 @@ describe('dataset schema', () => {
   it('defaults identity to pseudonymize and identity output', () => {
     const schema = defaultSchema(records);
     expect(schema.columns.find(c => c.name === 'username')?.mode).toBe('pseudonymize');
-    expect(schema.output).toEqual([{ name: 'username', source: 'pseudonym' }]);
+    expect(schema.output).toEqual([
+      { name: 'username', source: 'pseudonym' },
+      { name: 'result', source: 'choice' },
+    ]);
   });
 
   it('uses the explicitly selected reference target', () => {

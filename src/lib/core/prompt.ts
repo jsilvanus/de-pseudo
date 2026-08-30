@@ -66,14 +66,28 @@ function sanitizeRows(rows: Record<string, unknown>[], schema?: DatasetSchema): 
   });
 }
 
-function expandPromptTokens(task: string, rows: Record<string, unknown>[]): string {
+function columnIsBlocked(name: string, schema?: DatasetSchema): boolean {
+  if (schema) {
+    const column = schema.columns.find(c => c.name === name);
+    return !column || column.mode === 'pseudonymize' || column.mode === 'remove';
+  }
+  return COMMON_IDENTITY_COLUMNS.has(name.trim().toLowerCase());
+}
+
+function pseudonymizedDataBlock(rows: Record<string, unknown>[]): string {
+  return ['--- PSEUDONYMIZED DATA ---', pseudonymizedTsv(rows), '--- END PSEUDONYMIZED DATA ---'].join('\n');
+}
+
+function expandPromptTokens(task: string, rows: Record<string, unknown>[], schema?: DatasetSchema): string {
   return task
-    .replace(/\{\{pseudonymized values\}\}/gi, () => [
-      '--- PSEUDONYMIZED DATA ---', pseudonymizedTsv(rows), '--- END PSEUDONYMIZED DATA ---',
-    ].join('\n'))
+    .replace(/\{\{pseudonymized values\}\}/gi, () => pseudonymizedDataBlock(rows))
     .replace(/\{\{([^{}]+)\}\}/g, (_, column: string) => {
       const name = column.trim();
       if (name.toLowerCase() === 'pseudonymized values') return _;
+      // The schema (or, absent one, a conservative identity-column list) is the
+      // authoritative privacy boundary: a blocked column must not appear at all,
+      // not even as an empty "name: " label.
+      if (columnIsBlocked(name, schema)) return '';
       return rows.map(row => `${name}: ${tsvCell(row[name])}`).join('\n');
     });
 }
@@ -83,7 +97,12 @@ export function buildPrompt(rows: unknown[], task: string, format: ResponseForma
   const outputFields = schema?.output.map(f => f.name) ?? ['pseudonym', 'choice'];
   const objectRows = rows.filter((row): row is Record<string, unknown> => !!row && typeof row === 'object');
   const safeRows = sanitizeRows(objectRows, schema);
-  const expandedTask = expandPromptTokens(task.trim(), safeRows);
+  const trimmedTask = task.trim();
+  const hasDataToken = /\{\{pseudonymized values\}\}/i.test(trimmedTask);
+  let expandedTask = expandPromptTokens(trimmedTask, safeRows, schema);
+  // The pseudonymized dataset is always visible to the AI, even if the task
+  // text never references it via {{pseudonymized values}}.
+  if (!hasDataToken) expandedTask = [expandedTask, pseudonymizedDataBlock(safeRows)].join('\n\n');
   return [`SESSION ID: ${id}`, '', expandedTask, '', responseInstructions(format, id, outputFields)].join('\n');
 }
 

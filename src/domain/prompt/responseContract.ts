@@ -29,10 +29,27 @@ export function responseInstructions(format: ResponseFormat): string {
   ].join('\n');
 }
 
+function extractPseudonyms(rowsText: string): string[] {
+  return rowsText
+    .split(/\r?\n/)
+    .map((line) => line.split('|')[0]?.trim())
+    .filter((value): value is string => Boolean(value));
+}
+
 export function buildPromptWithContract(
   rowsText: string,
   task: string,
   format: ResponseFormat = 'lines',
 ): string {
-  return `${task.trim()}\n\n${responseInstructions(format)}\n\nDATA\n${rowsText.trim()}`;
+  let instructions = responseInstructions(format);
+  if (format === 'lines') {
+    const pseudonyms = extractPseudonyms(rowsText);
+    if (pseudonyms.length) {
+      instructions = instructions.replace(
+        '<pseudonym> -> <choice>',
+        pseudonyms.map((pseudonym) => `${pseudonym} -> <choice>`).join('\n'),
+      );
+    }
+  }
+  return `${task.trim()}\n\n${instructions}\n\nDATA\n${rowsText.trim()}`;
 }

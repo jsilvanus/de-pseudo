@@ -9,7 +9,13 @@ export function defaultSchema(records: InputRecord[], identityColumn = 'username
       referenceTarget: undefined,
       output: name === identityColumn,
     })),
-    output: [{ name: identityColumn, source: 'pseudonym' }],
+    // Include a slot for the AI's answer by default so the final resolved
+    // output actually shows what the AI decided, not just the resolved
+    // identity on its own.
+    output: [
+      { name: identityColumn, source: 'pseudonym' },
+      { name: 'result', source: 'choice' },
+    ],
   };
 }
 
