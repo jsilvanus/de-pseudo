@@ -68,6 +68,21 @@ test.describe('de-pseudo browser workflow', () => {
     await expect(promptSection.locator('textarea').first()).not.toHaveValue(/chosen_meal/);
   });
 
+  test('adds an AI-generated field via the Add button, not just the Enter key', async ({ page }) => {
+    // Some mobile keyboards show "Next"/"Go" on this field and just move
+    // focus instead of firing a keydown Enter the app can react to — the Add
+    // button is the tap-friendly path that must work on its own.
+    await createSession(page);
+    const aiOutput = page.getByRole('heading', { name: 'AI output' }).locator('..');
+    await aiOutput.getByRole('textbox', { name: 'AI-generated output field name' }).fill('assigned_room');
+    await aiOutput.getByRole('button', { name: 'Add' }).click();
+
+    await expect(aiOutput.getByRole('checkbox', { name: 'assigned_room' })).toBeChecked();
+    await expect(aiOutput.getByRole('textbox', { name: 'AI-generated output field name' })).toHaveValue('');
+    const promptSection = page.getByRole('heading', { name: 'Generated AI prompt' }).locator('..');
+    await expect(promptSection.locator('textarea').first()).toHaveValue(/columns: username, assigned_room\./);
+  });
+
   test('validates a tsv AI response (the default reply format) and exposes only the final local copy action', async ({ page }) => {
     await createSession(page);
     const promptSection = page.getByRole('heading', { name: 'Generated AI prompt' }).locator('..');

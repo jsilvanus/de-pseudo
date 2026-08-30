@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Box, Button, Checkbox, Container, FormControl, FormControlLabel, InputLabel, Link, MenuItem, Paper, Select, Stack, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, TextField, ToggleButton, ToggleButtonGroup, Typography } from '@mui/material';
+import AddRoundedIcon from '@mui/icons-material/AddRounded';
 import { pseudonymizeTables, applySchemas, buildMultiTablePrompt, parseSessionResponse, validateResults, projectOutput, defaultSchema, findReferenceCandidates, findInitialMatches, type DatasetSchema, type ResponseFormat, type MultiTableDataset, type NamedPseudonymizedTable, type SchemaTableInput } from './lib/core';
 import { loadFile, loadClipboardText, type DelimitedFormat } from './lib/input/loadDataset';
 import { SessionVault } from './domain/shred/sessionVault';
@@ -51,6 +52,7 @@ export default function App() {
   const [copied, setCopied] = useState<'prompt' | 'result' | null>(null);
   const [loading, setLoading] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
+  const newOutputFieldInputs = useRef<Record<number, HTMLInputElement | null>>({});
 
   useEffect(() => {
     vault.restore().then(data => {
@@ -99,6 +101,17 @@ export default function App() {
       next.tables[tableIndex].schema = fn(next.tables[tableIndex].schema);
       return next;
     });
+  }
+
+  // A tap target alongside "press Enter" — some mobile keyboards show a
+  // "Next"/"Go" key on this field that moves focus instead of firing the
+  // keydown Enter handler, leaving the field with no way to submit.
+  function addOutputField(ti: number) {
+    const input = newOutputFieldInputs.current[ti];
+    const name = input?.value.trim();
+    if (!name) return;
+    updateTableSchema(ti, s => { if (!s.output.some(o => o.name === name)) s.output.push({ name }); return s; });
+    if (input) input.value = '';
   }
 
   const promptResult = useMemo(() => {
@@ -358,7 +371,10 @@ export default function App() {
             return s;
           })} />} label={column.name} />)}
           {tbl.schema.output.filter(o => !tbl.schema.columns.some(c => c.name === o.name)).map(field => <FormControlLabel key={field.name} control={<Checkbox checked onChange={() => updateTableSchema(ti, s => { s.output = s.output.filter(o => o.name !== field.name); return s; })} />} label={field.name} />)}
-          <TextField size="small" label={t('aiFieldNameLabel')} placeholder="selected_food" onKeyDown={e => { if (e.key === 'Enter') { const name = (e.target as HTMLInputElement).value.trim(); if (name) { updateTableSchema(ti, s => { if (!s.output.some(o => o.name === name)) s.output.push({ name }); return s; }); (e.target as HTMLInputElement).value = ''; } } }} helperText={t('aiFieldHelper')} fullWidth sx={{ mt: 1, maxWidth: 340 }} />
+          <Stack direction="row" spacing={1} alignItems="flex-start" sx={{ mt: 1, maxWidth: 420 }}>
+            <TextField size="small" label={t('aiFieldNameLabel')} placeholder="selected_food" inputRef={el => { newOutputFieldInputs.current[ti] = el; }} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addOutputField(ti); } }} helperText={t('aiFieldHelper')} fullWidth />
+            <Button variant="outlined" size="small" onClick={() => addOutputField(ti)} startIcon={<AddRoundedIcon />} sx={{ mt: 0.25, flexShrink: 0 }}>{t('addField')}</Button>
+          </Stack>
         </Box>)}
       </Stack></Paper>
 
