@@ -1,18 +1,19 @@
 import type { IdentityMapping, InputRecord, PseudonymizedDataset, PseudonymizedRecord } from './types';
+import { createPseudonymGenerator, type RandomBytes } from './random';
 
-function token(): string {
-  const bytes = crypto.getRandomValues(new Uint8Array(6));
-  return Array.from(bytes, b => b.toString(36).padStart(2, '0')).join('').slice(0, 10);
-}
-
-export function pseudonymize(records: InputRecord[], usernameField = 'username'): PseudonymizedDataset {
+export function pseudonymize(
+  records: InputRecord[],
+  usernameField = 'username',
+  randomBytes?: RandomBytes,
+): PseudonymizedDataset {
+  const generate = createPseudonymGenerator(randomBytes);
   const mapping: IdentityMapping = {};
   const rows: PseudonymizedRecord[] = [];
   const used = new Set<string>();
 
   for (const record of records) {
-    let pseudonym = token();
-    while (used.has(pseudonym)) pseudonym = token();
+    let pseudonym = generate();
+    while (used.has(pseudonym)) pseudonym = generate();
     used.add(pseudonym);
 
     const identity = { ...record };
