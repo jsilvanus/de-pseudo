@@ -1,40 +1,55 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import { SessionVault } from './sessionVault';
+import { shredSession } from '../../storage/localVault';
 
 const sample = { input: 'name\tdata\nA\tpizza', prompt: 'choose', result: 'x -> pizza' };
 
 describe('SessionVault', () => {
+  beforeEach(async () => {
+    await shredSession();
+  });
+
   it('starts inactive', () => {
     const vault = new SessionVault<typeof sample>();
     expect(vault.active).toBe(false);
     expect(vault.data).toBeNull();
+    expect(vault.sessionId).toBeNull();
   });
 
-  it('creates an active session', async () => {
+  it('creates an active encrypted session with a random session id', async () => {
     const vault = new SessionVault<typeof sample>();
     await vault.create(sample);
     expect(vault.active).toBe(true);
     expect(vault.data).toEqual(sample);
+    expect(vault.sessionId).toMatch(/^[0-9a-f]{32}$/);
   });
 
-  it('keeps the previous state when persistence fails', async () => {
+  it('updates persisted state without changing the session id', async () => {
     const vault = new SessionVault<typeof sample>();
     await vault.create(sample);
-    const original = vault.data;
+    const sessionId = vault.sessionId;
 
-    const { persistVault } = await import('./cryptoshred');
-    const spy = vi.spyOn(await import('./cryptoshred'), 'persistVault').mockRejectedValueOnce(new Error('storage failure'));
+    const changed = { ...sample, result: 'changed' };
+    await vault.update(changed);
 
-    await expect(vault.update({ ...sample, result: 'changed' })).rejects.toThrow('storage failure');
-    expect(vault.data).toEqual(original);
-    spy.mockRestore();
+    expect(vault.data).toEqual(changed);
+    expect(vault.sessionId).toBe(sessionId);
+
+    const restored = new SessionVault<typeof sample>();
+    await expect(restored.restore()).resolves.toEqual(changed);
+    expect(restored.sessionId).toBe(sessionId);
   });
 
-  it('clears its active state after shred', async () => {
+  it('clears its active state after shred and cannot restore the destroyed session', async () => {
     const vault = new SessionVault<typeof sample>();
     await vault.create(sample);
     await vault.shred();
     expect(vault.active).toBe(false);
     expect(vault.data).toBeNull();
+    expect(vault.sessionId).toBeNull();
+
+    const restored = new SessionVault<typeof sample>();
+    await expect(restored.restore()).resolves.toBeNull();
+    expect(restored.active).toBe(false);
   });
 });
