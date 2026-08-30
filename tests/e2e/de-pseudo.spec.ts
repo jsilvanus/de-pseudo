@@ -51,7 +51,10 @@ test.describe('de-pseudo browser workflow', () => {
     await createSession(page);
     const promptSection = page.getByRole('heading', { name: 'Generated AI prompt' }).locator('..');
     const before = await promptSection.locator('textarea').first().inputValue();
-    expect(before).toContain('columns: username.');
+    // The identity output field is requested under the literal "pseudonym"
+    // column — that's the token the AI must echo back — not under the
+    // source column's own display name ("username").
+    expect(before).toContain('columns: pseudonym.');
     expect(before).not.toMatch(/\bresult\b/i);
 
     const aiOutput = page.getByRole('heading', { name: 'AI output' }).locator('..');
@@ -60,7 +63,7 @@ test.describe('de-pseudo browser workflow', () => {
 
     const newFieldCheckbox = aiOutput.getByRole('checkbox', { name: 'chosen_meal' });
     await expect(newFieldCheckbox).toBeChecked();
-    await expect(promptSection.locator('textarea').first()).toHaveValue(/columns: username, chosen_meal\./);
+    await expect(promptSection.locator('textarea').first()).toHaveValue(/columns: pseudonym, chosen_meal\./);
 
     // Unchecking removes the field entirely rather than leaving a stray unchecked box.
     await newFieldCheckbox.click();
@@ -80,7 +83,7 @@ test.describe('de-pseudo browser workflow', () => {
     await expect(aiOutput.getByRole('checkbox', { name: 'assigned_room' })).toBeChecked();
     await expect(aiOutput.getByRole('textbox', { name: 'AI-generated output field name' })).toHaveValue('');
     const promptSection = page.getByRole('heading', { name: 'Generated AI prompt' }).locator('..');
-    await expect(promptSection.locator('textarea').first()).toHaveValue(/columns: username, assigned_room\./);
+    await expect(promptSection.locator('textarea').first()).toHaveValue(/columns: pseudonym, assigned_room\./);
   });
 
   test('validates a tsv AI response (the default reply format) and exposes only the final local copy action', async ({ page }) => {
@@ -283,7 +286,9 @@ test.describe('multiple tables', () => {
     expect(prompt).not.toContain('Bob');
     expect(prompt).not.toContain('Room A');
     expect(prompt).not.toContain('Room B');
-    expect(prompt).toContain('Then return a tab-separated table with these columns: name, assigned_room.');
+    // "name" is the identity column, requested under the literal "pseudonym"
+    // column — the token the AI must echo back, not its display name.
+    expect(prompt).toContain('Then return a tab-separated table with these columns: pseudonym, assigned_room.');
 
     const roomsBlock = prompt.split('--- ROOMS ---')[1].split('--- END ROOMS ---')[0];
     const roomPseudonym = roomsBlock.trim().split('\n')[1].split('\t')[0];

@@ -1,4 +1,14 @@
-import type { DatasetSchema, ResponseFormat } from './types';
+import type { DatasetSchema, OutputField, ResponseFormat } from './types';
+
+// The AI is asked to echo the pseudonym token itself under the literal
+// column "pseudonym" — never under a renamed output field like "Nimi" that
+// only exists so the *locally resolved* result carries that label. Using the
+// custom name here would mismatch both this same instruction's own "the
+// pseudonym column must be present" line and the literal "pseudonym" header
+// the parser looks for.
+function outputFieldName(field: OutputField): string {
+  return field.source === 'pseudonym' ? 'pseudonym' : field.name;
+}
 
 const COMMON_IDENTITY_COLUMNS = new Set([
   'username', 'user name', 'name', 'full name', 'fullname', 'first name', 'last name',
@@ -19,7 +29,9 @@ export function responseInstructions(format: ResponseFormat = 'tsv', sessionId =
   if (format === 'tsv') return [
     'OUTPUT FORMAT',
     `First line must be exactly: SESSION ID:\t${sessionId}`,
+    'Leave one blank line after the SESSION ID line.',
     `Then return a tab-separated table with these columns: ${fields}.`,
+    'Leave one blank line after the header row, before the data rows.',
     'The pseudonym column must be present and must contain every pseudonym exactly once.',
     'Do not invent, modify, or omit pseudonyms. Do not include real names or identifying information.',
     'Do not include markdown or explanatory text.',
@@ -27,7 +39,9 @@ export function responseInstructions(format: ResponseFormat = 'tsv', sessionId =
   if (format === 'csv') return [
     'OUTPUT FORMAT',
     `First line must be exactly: SESSION ID: ${sessionId}`,
+    'Leave one blank line after the SESSION ID line.',
     `Then return a comma-separated (CSV) table with these columns: ${fields}.`,
+    'Leave one blank line after the header row, before the data rows.',
     'The pseudonym column must be present and must contain every pseudonym exactly once.',
     'Quote a field in double quotes if it contains a comma, a quote, or a line break.',
     'Do not invent, modify, or omit pseudonyms. Do not include real names or identifying information.',
@@ -36,7 +50,9 @@ export function responseInstructions(format: ResponseFormat = 'tsv', sessionId =
   if (format === 'psv') return [
     'OUTPUT FORMAT',
     `First line must be exactly: SESSION ID: ${sessionId}`,
+    'Leave one blank line after the SESSION ID line.',
     `Then return a pipe-separated (PSV, using "|") table with these columns: ${fields}.`,
+    'Leave one blank line after the header row, before the data rows.',
     'The pseudonym column must be present and must contain every pseudonym exactly once.',
     'Do not include markdown or explanatory text.',
   ].join('\n');
@@ -134,7 +150,7 @@ function expandPromptTokens(task: string, rows: Record<string, unknown>[], forma
 
 export function buildPrompt(rows: unknown[], task: string, format: ResponseFormat = 'tsv', sessionId?: string, schema?: DatasetSchema): string {
   const id = sessionId ?? generateSessionId();
-  const outputFields = schema?.output.map(f => f.name) ?? ['pseudonym', 'choice'];
+  const outputFields = schema?.output.length ? [...new Set(schema.output.map(outputFieldName))] : ['pseudonym', 'choice'];
   const objectRows = rows.filter((row): row is Record<string, unknown> => !!row && typeof row === 'object');
   const safeRows = sanitizeRows(objectRows, schema);
   const trimmedTask = task.trim();
@@ -162,7 +178,7 @@ export function buildMultiTablePrompt(
   sessionId?: string,
 ): string {
   const id = sessionId ?? generateSessionId();
-  const contributingFields = [...new Set(tables.flatMap(t => (t.schema?.output.length ? t.schema.output.map(f => f.name) : [])))];
+  const contributingFields = [...new Set(tables.flatMap(t => (t.schema?.output.length ? t.schema.output.map(outputFieldName) : [])))];
   const outputFields = contributingFields.length ? contributingFields : ['pseudonym', 'choice'];
 
   const delimiter = delimiterFor(format);
