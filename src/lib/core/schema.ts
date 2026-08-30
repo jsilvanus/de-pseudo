@@ -74,7 +74,7 @@ function resolveReferenceValue(
   if (initialMatches.length === 1) {
     const inferred = lookup.get(initialMatches[0]);
     if (inferred) {
-      overrides.notes?.push(`${columnName}: "${value}" was matched to "${initialMatches[0]}" by first name and last initial — verify this is correct.`);
+      overrides.notes?.push(`${columnName}: "${value}" — partial match resolved to "${initialMatches[0]}". Verify this is correct.`);
       return inferred;
     }
   }

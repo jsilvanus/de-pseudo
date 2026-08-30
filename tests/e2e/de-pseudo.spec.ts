@@ -148,8 +148,8 @@ test.describe('ambiguous and unmatched reference text', () => {
     await setFriendColumnToReference(page);
 
     const section4 = page.getByRole('heading', { name: '4. Resolve text references' }).locator('..');
-    await expect(section4).toContainText('was matched to "Anna Johnson" by first name and last initial');
-    await expect(section4).toContainText('auto-matched by initial to "Anna Johnson"');
+    await expect(section4).toContainText('partial match resolved to "Anna Johnson"');
+    await expect(section4).toContainText('partial match resolved to "Anna Johnson" — verify');
     await expect(section4).not.toContainText('Unresolved references');
 
     // No manual pick needed: the prompt generates immediately, already

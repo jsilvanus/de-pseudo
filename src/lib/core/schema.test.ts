@@ -95,7 +95,7 @@ describe('dataset schema', () => {
     // pseudonym — the point of this case is just that it resolves at all,
     // without throwing and without a manual override.
     expect(rows[0].friend).toBe('aaa');
-    expect(notes).toEqual(['friend: "Anna J." was matched to "Anna Johnson" by first name and last initial — verify this is correct.']);
+    expect(notes).toEqual(['friend: "Anna J." — partial match resolved to "Anna Johnson". Verify this is correct.']);
   });
 
   it('does not guess when an initial matches more than one person', () => {
