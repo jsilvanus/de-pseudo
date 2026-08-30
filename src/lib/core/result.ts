@@ -1,4 +1,17 @@
-import type { ParsedResult, ValidationResult } from './types';
+import type { ParsedResult, ValidationResult, ResponseFormat } from './types';
+
+export type SessionResponse = { sessionId: string; results: ParsedResult[] };
+
+export function extractSessionId(text: string): string {
+  const match = text.match(/^SESSION ID:\s*([0-9a-f]{32})\s*$/im);
+  if (!match) throw new Error('AI response is missing a valid session ID');
+  return match[1];
+}
+
+export function assertSessionId(text: string, expected: string): void {
+  const actual = extractSessionId(text);
+  if (actual !== expected) throw new Error('AI response belongs to a different session');
+}
 
 export function parseLines(text: string): ParsedResult[] {
   return text.split(/\r?\n/).flatMap(line => {
@@ -20,19 +33,29 @@ export function parseJson(text: string): ParsedResult[] {
   });
 }
 
+export function parseSessionResponse(text: string, format: ResponseFormat, expectedSessionId: string): ParsedResult[] {
+  assertSessionId(text, expectedSessionId);
+  if (format === 'json') {
+    const value: unknown = JSON.parse(text);
+    if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Expected a JSON response object');
+    const r = value as Record<string, unknown>;
+    if (r.sessionId !== expectedSessionId || !Array.isArray(r.results)) throw new Error('Invalid session response');
+    return parseJson(JSON.stringify(r.results));
+  }
+  return parseLines(text);
+}
+
 export function validateResults(results: ParsedResult[], expected: string[]): ValidationResult {
   const expectedSet = new Set(expected);
   const seen = new Set<string>();
   const valid: ParsedResult[] = [];
   const unknown: ParsedResult[] = [];
   const duplicatePseudonyms: string[] = [];
-
   for (const result of results) {
     if (!expectedSet.has(result.pseudonym)) unknown.push(result);
     else if (seen.has(result.pseudonym)) duplicatePseudonyms.push(result.pseudonym);
     else { seen.add(result.pseudonym); valid.push(result); }
   }
-
   return {
     valid,
     unknown,
