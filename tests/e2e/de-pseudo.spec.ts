@@ -1,5 +1,14 @@
 import { test, expect, type Page } from '@playwright/test';
 
+// Finnish is the default language for real visitors, but these functional
+// tests assert on the original English copy — force English before every
+// navigation so the workflow assertions stay language-independent of the
+// i18n default. Not applied to the 'internationalization' suite below,
+// which specifically exercises the default language and the switcher.
+async function forceEnglish({ page }: { page: Page }) {
+  await page.addInitScript(() => localStorage.setItem('de-pseudo-language', 'en'));
+}
+
 const input = [
   ['username', 'preference'],
   ['John Johnson', 'icecream'],
@@ -26,6 +35,8 @@ async function createSession(page: Page) {
 }
 
 test.describe('de-pseudo browser workflow', () => {
+  test.beforeEach(forceEnglish);
+
   test('pseudonymizes tabular input and keeps real identities out of the generated prompt', async ({ page }) => {
     await createSession(page);
     await expect(page.getByRole('heading', { name: 'Dataset editor' })).toBeVisible();
@@ -129,6 +140,8 @@ test.describe('de-pseudo browser workflow', () => {
 });
 
 test.describe('multiple tables', () => {
+  test.beforeEach(forceEnglish);
+
   // The exact motivating case: a "Rooms" table with no people in it, and a
   // "Preferences" table naming a person and the room they're in. Both the
   // person's name and the room number must be pseudonymized, and the room
@@ -270,6 +283,8 @@ test.describe('multiple tables', () => {
 });
 
 test.describe('ambiguous and unmatched reference text', () => {
+  test.beforeEach(forceEnglish);
+
   // Anna Johnson and Anna Benson share a first name, so a bare "Anna" is
   // ambiguous between them; "Anna Q." matches neither surname's initial and
   // has no automatic candidate at all. Neither should ever reach the
@@ -362,5 +377,39 @@ test.describe('ambiguous and unmatched reference text', () => {
     // John Johnson's friend column must carry a real pseudonym (Anna
     // Johnson's), not be left empty or leak the literal reference text.
     expect(prompt).toMatch(/^[0-9a-f]{12}\t[0-9a-f]{12}$/m);
+  });
+});
+
+test.describe('internationalization', () => {
+  test('defaults to Finnish for a first-time visitor and offers a top-right language switcher', async ({ page }) => {
+    await page.goto('/');
+    await expect(page.getByRole('heading', { name: 'Näin se toimii' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: '1. Lataa tiedot' })).toBeVisible();
+
+    const switcher = page.getByRole('group', { name: 'Kieli' });
+    await expect(switcher).toBeVisible();
+    const headerBox = await page.locator('h3', { hasText: 'de-pseudo' }).boundingBox();
+    const switcherBox = await switcher.boundingBox();
+    expect(switcherBox).toBeTruthy();
+    expect(headerBox).toBeTruthy();
+    // The switcher sits to the right of and roughly level with the title.
+    expect(switcherBox!.x).toBeGreaterThan(headerBox!.x);
+  });
+
+  test('switches the whole UI to English and Swedish and persists the choice across reloads', async ({ page }) => {
+    await page.goto('/');
+    await expect(page.getByRole('heading', { name: 'Näin se toimii' })).toBeVisible();
+    const switcher = page.getByRole('group', { name: /Kieli|Language|Språk/ });
+
+    await switcher.getByRole('button', { name: 'EN', exact: true }).click();
+    await expect(page.getByRole('heading', { name: 'How it works' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: '1. Load data' })).toBeVisible();
+
+    await switcher.getByRole('button', { name: 'SV', exact: true }).click();
+    await expect(page.getByRole('heading', { name: 'Så här fungerar det' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: '1. Ladda data' })).toBeVisible();
+
+    await page.reload();
+    await expect(page.getByRole('heading', { name: 'Så här fungerar det' })).toBeVisible();
   });
 });

@@ -1,12 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
 import { Box, Button, Chip, Paper, Stack, Typography } from '@mui/material';
 import type { InputRecord } from '../lib/core';
+import { useLanguage } from '../i18n/LanguageContext';
 
 export type CellReference = { sourceRow: number; sourceColumn: string; targetRow: number; targetColumn: string };
 type Point = { x: number; y: number };
 type Props = { rows: InputRecord[]; columns: string[]; referenceColumns: string[]; pseudonymizedColumns: string[]; references?: CellReference[]; onChange: (references: CellReference[]) => void };
 
 export function ReferenceEditor({ rows, columns, referenceColumns, pseudonymizedColumns, references = [], onChange }: Props) {
+  const { t } = useLanguage();
   const [drag, setDrag] = useState<{ row: number; column: string; point: Point } | null>(null);
   const [pointer, setPointer] = useState<Point | null>(null);
   const [showLines, setShowLines] = useState(true);
@@ -19,7 +21,7 @@ export function ReferenceEditor({ rows, columns, referenceColumns, pseudonymized
   function move(e: React.PointerEvent) { if (drag) setPointer(point(e)); }
   function finish(e: React.PointerEvent, targetRow?: number, targetColumn?: string) { if (!drag) return; if (targetRow !== undefined && targetColumn && pseudonymizedColumns.includes(targetColumn) && !(targetRow === drag.row && targetColumn === drag.column)) { const next = references.filter(r => !(r.sourceRow === drag.row && r.sourceColumn === drag.column)); next.push({ sourceRow: drag.row, sourceColumn: drag.column, targetRow, targetColumn }); onChange(next); } setDrag(null); setPointer(null); }
   return <Paper variant="outlined" sx={{ p: 2 }}>
-    <Stack spacing={1}><Stack direction="row" justifyContent="space-between" alignItems="center"><Box><Typography variant="subtitle2">Draw references in the dataset</Typography><Typography variant="body2" color="text.secondary">Drag ↗ from a Reference cell directly onto a pseudonymized person cell.</Typography></Box><Button size="small" variant="outlined" onClick={() => setShowLines(v => !v)}>{showLines ? 'Hide references' : 'Show references'}</Button></Stack>
+    <Stack spacing={1}><Stack direction="row" justifyContent="space-between" alignItems="center"><Box><Typography variant="subtitle2">{t('referenceEditorTitle')}</Typography><Typography variant="body2" color="text.secondary">{t('referenceEditorDescription')}</Typography></Box><Button size="small" variant="outlined" onClick={() => setShowLines(v => !v)}>{showLines ? t('hideReferences') : t('showReferences')}</Button></Stack>
       <Box ref={setRoot} onPointerMove={move} onPointerUp={() => drag && finish({} as React.PointerEvent)} sx={{ position: 'relative', overflow: 'auto', touchAction: 'none', maxHeight: 520 }}>
         {showLines && <svg aria-hidden="true" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 3, overflow: 'visible' }}>
           {references.map((r, i) => { const a = pointFor(r.sourceRow, r.sourceColumn), b = pointFor(r.targetRow, r.targetColumn); if (!a || !b) return null; const cx = (a.x + b.x) / 2; return <path key={`${r.sourceRow}:${r.sourceColumn}:${r.targetRow}:${r.targetColumn}:${i}`} d={`M${a.x} ${a.y} C${cx} ${a.y},${cx} ${b.y},${b.x} ${b.y}`} fill="none" stroke="currentColor" strokeWidth="2.5" opacity=".7" />; })}
