@@ -7,8 +7,16 @@ import {
   validateResults,
   parseSessionResponse,
 } from '../../lib/core';
-import { resolveResult } from '../result/resolve';
+import { resolveText } from '../result/resolve';
 import { SessionVault } from '../shred/sessionVault';
+import type { IdentityMapping } from '../../lib/core';
+
+function toPseudonymMappings(mapping: IdentityMapping) {
+  return Object.entries(mapping).map(([pseudonym, record]) => ({
+    pseudonym,
+    identity: String(record.username),
+  }));
+}
 
 const source = [
   { username: 'Alice', preference: 'wants icecream' },
@@ -26,7 +34,7 @@ describe('de-pseudo end-to-end workflow', () => {
     const base = pseudonymize(source);
     const schema = defaultSchema(source);
     const rows = applySchema(source, base.rows.map(r => r.pseudonym), schema);
-    const sessionId = 'workflow-session';
+    const sessionId = '0123456789abcdef0123456789abcdef';
 
     const prompt = buildPrompt(rows, 'Make an order based on food preferences. {{pseudonymized values}}', 'tsv', sessionId, schema);
     expect(prompt).toContain('icecream');
@@ -42,7 +50,7 @@ describe('de-pseudo end-to-end workflow', () => {
     expect(validation.duplicatePseudonyms).toEqual([]);
     expect(validation.missingPseudonyms).toEqual([]);
 
-    const resolved = resolveResult(JSON.stringify(parsed), base.mapping);
+    const resolved = resolveText(JSON.stringify(parsed), toPseudonymMappings(base.mapping));
     expect(resolved).toContain('Alice');
     expect(resolved).toContain('Bob');
     expect(resolved).toContain('vanilla icecream');
@@ -65,7 +73,10 @@ describe('de-pseudo end-to-end workflow', () => {
 
   it('never resolves a made-up pseudonym', () => {
     const base = pseudonymize([{ username: 'Alice', preference: 'wants tea' }]);
-    const resolved = resolveResult(JSON.stringify([{ pseudonym: 'not-a-real-token', choice: 'coffee' }]), base.mapping);
+    const resolved = resolveText(
+      JSON.stringify([{ pseudonym: 'not-a-real-token', choice: 'coffee' }]),
+      toPseudonymMappings(base.mapping),
+    );
     expect(resolved).toContain('not-a-real-token');
     expect(resolved).not.toContain('Alice');
   });

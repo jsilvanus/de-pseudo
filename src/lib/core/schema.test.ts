@@ -10,7 +10,10 @@ describe('dataset schema', () => {
   it('defaults identity to pseudonymize and identity output', () => {
     const schema = defaultSchema(records);
     expect(schema.columns.find(c => c.name === 'username')?.mode).toBe('pseudonymize');
-    expect(schema.output).toEqual([{ name: 'username', source: 'pseudonym' }]);
+    expect(schema.output).toEqual([
+      { name: 'username', source: 'pseudonym' },
+      { name: 'result', source: 'choice' },
+    ]);
   });
 
   it('uses the explicitly selected reference target', () => {
@@ -42,6 +45,110 @@ describe('dataset schema', () => {
     schema.columns.find(c => c.name === 'friend')!.mode = 'reference';
     schema.columns.find(c => c.name === 'friend')!.referenceTarget = 'employeeId';
     expect(() => applySchema(records, ['aaa', 'bbb'], schema)).toThrow(/not a pseudonymized column/);
+  });
+
+  it('blocks reference text that is ambiguous or does not exactly match a person, instead of leaking it', () => {
+    // "Anna Q." doesn't match either surname's initial, and "Anna" alone
+    // matches two people (Anna Johnson and Anna Benson) — neither should
+    // silently pass through as raw text.
+    const people = [
+      { username: 'Anna Johnson', friend: 'Anna Q.' },
+      { username: 'John Johnson', friend: 'Anna' },
+      { username: 'Anna Benson', friend: '' },
+    ];
+    const schema = defaultSchema(people);
+    schema.columns.find(c => c.name === 'friend')!.mode = 'reference';
+    schema.columns.find(c => c.name === 'friend')!.referenceTarget = 'username';
+    expect(() => applySchema(people, ['aaa', 'bbb', 'ccc'], schema)).toThrow(
+      /Unresolved references:.*"Anna Q\.".*"Anna"/s,
+    );
+  });
+
+  it('resolves unmatched reference text via a manually chosen alias', () => {
+    const people = [
+      { username: 'Anna Johnson', friend: 'the redhead' },
+      { username: 'John Johnson', friend: '' },
+      { username: 'Anna Benson', friend: '' },
+    ];
+    const schema = defaultSchema(people);
+    schema.columns.find(c => c.name === 'friend')!.mode = 'reference';
+    schema.columns.find(c => c.name === 'friend')!.referenceTarget = 'username';
+    const rows = applySchema(people, ['aaa', 'bbb', 'ccc'], schema, 'username', {
+      aliases: { 'friend:the redhead': 'Anna Benson' },
+    });
+    expect(rows[0].friend).toBe('ccc');
+    expect(JSON.stringify(rows)).not.toContain('redhead');
+  });
+
+  it('auto-resolves a unique first-name-plus-last-initial reference, with a note', () => {
+    const people = [
+      { username: 'Anna Johnson', friend: 'Anna J.' },
+      { username: 'John Johnson', friend: '' },
+      { username: 'Anna Benson', friend: '' },
+    ];
+    const schema = defaultSchema(people);
+    schema.columns.find(c => c.name === 'friend')!.mode = 'reference';
+    schema.columns.find(c => c.name === 'friend')!.referenceTarget = 'username';
+    const notes: string[] = [];
+    const rows = applySchema(people, ['aaa', 'bbb', 'ccc'], schema, 'username', { notes });
+    // "Anna J." resolves to Anna Johnson herself here (row 0), i.e. its own
+    // pseudonym — the point of this case is just that it resolves at all,
+    // without throwing and without a manual override.
+    expect(rows[0].friend).toBe('aaa');
+    expect(notes).toEqual(['friend: "Anna J." — partial match resolved to "Anna Johnson". Verify this is correct.']);
+  });
+
+  it('does not guess when an initial matches more than one person', () => {
+    const people = [
+      { username: 'Anna Johnson', friend: '' },
+      { username: 'Anna Jones', friend: 'Anna J.' },
+      { username: 'Bob Smith', friend: '' },
+    ];
+    const schema = defaultSchema(people);
+    schema.columns.find(c => c.name === 'friend')!.mode = 'reference';
+    schema.columns.find(c => c.name === 'friend')!.referenceTarget = 'username';
+    const notes: string[] = [];
+    expect(() => applySchema(people, ['aaa', 'bbb', 'ccc'], schema, 'username', { notes })).toThrow(
+      /Unresolved references:.*"Anna J\."/,
+    );
+    expect(notes).toEqual([]);
+  });
+
+  it('lets an explicit alias override an inferred initial match', () => {
+    const people = [
+      { username: 'Anna Johnson', friend: 'Anna J.' },
+      { username: 'John Johnson', friend: '' },
+      { username: 'Anna Benson', friend: '' },
+    ];
+    const schema = defaultSchema(people);
+    schema.columns.find(c => c.name === 'friend')!.mode = 'reference';
+    schema.columns.find(c => c.name === 'friend')!.referenceTarget = 'username';
+    const notes: string[] = [];
+    // "Anna J." would infer Anna Johnson, but the user explicitly chose
+    // someone else — their choice must win, and no inference note is logged.
+    const rows = applySchema(people, ['aaa', 'bbb', 'ccc'], schema, 'username', {
+      aliases: { 'friend:Anna J.': 'Anna Benson' },
+      notes,
+    });
+    expect(rows[0].friend).toBe('ccc');
+    expect(notes).toEqual([]);
+  });
+
+  it('resolves an ambiguous reference via a row-specific cell reference, which takes precedence', () => {
+    const people = [
+      { username: 'Anna Johnson', friend: '' },
+      { username: 'John Johnson', friend: 'Anna' },
+      { username: 'Anna Benson', friend: '' },
+    ];
+    const schema = defaultSchema(people);
+    schema.columns.find(c => c.name === 'friend')!.mode = 'reference';
+    schema.columns.find(c => c.name === 'friend')!.referenceTarget = 'username';
+    const rows = applySchema(people, ['aaa', 'bbb', 'ccc'], schema, 'username', {
+      cellReferences: [{ sourceRow: 1, sourceColumn: 'friend', targetRow: 2, targetColumn: 'username' }],
+      // A conflicting alias is present too; the cell reference should win.
+      aliases: { 'friend:Anna': 'Anna Johnson' },
+    });
+    expect(rows[1].friend).toBe('ccc');
   });
 
   it('removes selected input columns', () => {

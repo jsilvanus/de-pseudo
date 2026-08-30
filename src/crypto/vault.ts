@@ -31,18 +31,18 @@ export async function encryptJson<T>(value: T, key: CryptoKey, generation = ''):
   const iv = crypto.getRandomValues(new Uint8Array(IV_LENGTH));
   const plaintext = new TextEncoder().encode(JSON.stringify(value));
   const ciphertext = await crypto.subtle.encrypt(
-    { name: ALGORITHM, iv, additionalData: aad(generation) },
+    { name: ALGORITHM, iv: iv as BufferSource, additionalData: aad(generation) as BufferSource },
     key,
-    plaintext,
+    plaintext as BufferSource,
   );
   return { iv: bytesToBase64(iv), ciphertext: bytesToBase64(new Uint8Array(ciphertext)) };
 }
 
 export async function decryptJson<T>(payload: EncryptedPayload, key: CryptoKey, generation = ''): Promise<T> {
   const plaintext = await crypto.subtle.decrypt(
-    { name: ALGORITHM, iv: base64ToBytes(payload.iv), additionalData: aad(generation) },
+    { name: ALGORITHM, iv: base64ToBytes(payload.iv) as BufferSource, additionalData: aad(generation) as BufferSource },
     key,
-    base64ToBytes(payload.ciphertext),
+    base64ToBytes(payload.ciphertext) as BufferSource,
   );
   return JSON.parse(new TextDecoder().decode(plaintext)) as T;
 }

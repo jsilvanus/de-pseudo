@@ -296,6 +296,34 @@ Also test malformed and adversarial AI output, including unknown pseudonyms and 
 35. PWA/offline support.
 36. Clear local-only status.
 
+## Future work
+
+Deliberately out of scope for now, noted here so the current single-session,
+one-identity-column-per-table model reads as a choice rather than an
+oversight:
+
+- **Multiple concurrent sessions.** The vault holds exactly one active
+  encrypted session at a time; starting a new one replaces whatever was
+  there, and there is no history to browse. Supporting several
+  simultaneously-open sessions (e.g. switching between two unrelated
+  pseudonymization tasks without shredding one first) would need a real
+  session list — a store keyed by session id instead of a single fixed
+  slot, plus UI to name, switch between, and individually shred sessions.
+  Worth doing if a workflow needs it; skipped for now to keep the storage
+  model, and the "there is exactly one thing to shred" mental model, simple.
+
+- **Multiple independently-pseudonymized identity columns per table.** Each
+  table currently has exactly one identity column, chosen when the table is
+  loaded; that is the only column with a real, resolvable pseudonym, and
+  every reference in the app ultimately resolves against it. A table with
+  two columns that each need their own separately-pseudonymized identity
+  (e.g. both an `employee_name` and a `manager_name` column, each
+  independently referenceable) is not supported — cross-table references
+  already work (see the multi-table architecture above), but not multiple
+  identity pools *within* one table. Would need the load wizard's single
+  "Identity column" picker to become multi-select, and the resolution
+  engine to build a lookup per identity column rather than per table.
+
 ## Architectural principles
 
 1. **Local first.** Personal data never needs a server.

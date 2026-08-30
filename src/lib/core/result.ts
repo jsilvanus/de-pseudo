@@ -19,11 +19,11 @@ function parseDelimitedRows(text: string, delimiter: string): ParsedResult[] {
   if (!data.length) return [];
   const header = data[0].split(delimiter).map(v => v.trim());
   const pseudoIndex = header.findIndex(v => v.toLowerCase() === 'pseudonym');
-  if (pseudoIndex < 0) throw new Error('TSV response must contain a pseudonym column');
+  if (pseudoIndex < 0) throw new Error('Delimited response must contain a pseudonym column');
   return data.slice(1).map((line, index) => {
     const values = line.split(delimiter);
     const pseudonym = (values[pseudoIndex] ?? '').trim();
-    if (!pseudonym) throw new Error(`TSV result row ${index + 2} has no pseudonym`);
+    if (!pseudonym) throw new Error(`Delimited result row ${index + 2} has no pseudonym`);
     const result: ParsedResult = { pseudonym, choice: '' };
     header.forEach((name, i) => { if (name && name.toLowerCase() !== 'pseudonym') result[name] = (values[i] ?? '').trim(); });
     const choice = result.choice ?? result[header.find(h => h.toLowerCase() !== 'pseudonym') ?? 'choice'] ?? '';
@@ -58,9 +58,9 @@ export function parseSessionResponse(text: string, format: ResponseFormat, expec
     if (r.sessionId !== expectedSessionId || !Array.isArray(r.results)) throw new Error('AI response has an invalid session ID');
     return parseJson(JSON.stringify(r.results));
   }
-  if (format === 'tsv') {
+  if (format === 'tsv' || format === 'csv') {
     assertSessionId(text, expectedSessionId);
-    return parseDelimitedRows(text, '\t');
+    return parseDelimitedRows(text, format === 'csv' ? ',' : '\t');
   }
   assertSessionId(text, expectedSessionId);
   return parseLines(text);
