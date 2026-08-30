@@ -33,6 +33,13 @@ export function responseInstructions(format: ResponseFormat = 'tsv', sessionId =
     'Do not invent, modify, or omit pseudonyms. Do not include real names or identifying information.',
     'Do not include markdown or explanatory text.',
   ].join('\n');
+  if (format === 'psv') return [
+    'OUTPUT FORMAT',
+    `First line must be exactly: SESSION ID: ${sessionId}`,
+    `Then return a pipe-separated (PSV, using "|") table with these columns: ${fields}.`,
+    'The pseudonym column must be present and must contain every pseudonym exactly once.',
+    'Do not include markdown or explanatory text.',
+  ].join('\n');
   return [
     'OUTPUT FORMAT', `First line must be exactly: SESSION ID: ${sessionId}`,
     `Then return exactly one line for each pseudonym: <pseudonym> -> <choice>`,
@@ -53,10 +60,21 @@ function csvCell(value: unknown): string {
   return /[",]/.test(str) ? `"${str.replace(/"/g, '""')}"` : str;
 }
 
+function psvCell(value: unknown): string {
+  if (value === null || value === undefined) return '';
+  return String(value).replace(/\r?\n/g, ' ').replace(/\|/g, ' ');
+}
+
+function delimiterFor(format: ResponseFormat): ',' | '\t' | '|' {
+  if (format === 'csv') return ',';
+  if (format === 'psv') return '|';
+  return '\t';
+}
+
 /** Render rows as a delimited table; used for both the AI-facing pseudonymized data block and its response format. */
-export function pseudonymizedTable(rows: Record<string, unknown>[], delimiter: ',' | '\t' = '\t'): string {
+export function pseudonymizedTable(rows: Record<string, unknown>[], delimiter: ',' | '\t' | '|' = '\t'): string {
   if (!rows.length) return '';
-  const cell = delimiter === ',' ? csvCell : tsvCell;
+  const cell = delimiter === ',' ? csvCell : delimiter === '|' ? psvCell : tsvCell;
   const columns = [...new Set(rows.flatMap(row => Object.keys(row)))];
   return [columns.map(cell).join(delimiter), ...rows.map(row => columns.map(column => cell(row[column])).join(delimiter))].join('\n');
 }
@@ -96,7 +114,7 @@ function columnIsBlocked(name: string, schema?: DatasetSchema): boolean {
 }
 
 function pseudonymizedDataBlock(rows: Record<string, unknown>[], format: ResponseFormat): string {
-  const delimiter = format === 'csv' ? ',' : '\t';
+  const delimiter = delimiterFor(format);
   return ['--- PSEUDONYMIZED DATA ---', pseudonymizedTable(rows, delimiter), '--- END PSEUDONYMIZED DATA ---'].join('\n');
 }
 
@@ -147,7 +165,7 @@ export function buildMultiTablePrompt(
   const contributingFields = [...new Set(tables.flatMap(t => (t.schema?.output.length ? t.schema.output.map(f => f.name) : [])))];
   const outputFields = contributingFields.length ? contributingFields : ['pseudonym', 'choice'];
 
-  const delimiter = format === 'csv' ? ',' : '\t';
+  const delimiter = delimiterFor(format);
   const blocks = tables.map(t => {
     const objectRows = t.rows.filter((row): row is Record<string, unknown> => !!row && typeof row === 'object');
     const safeRows = sanitizeRows(objectRows, t.schema);

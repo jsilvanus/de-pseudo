@@ -47,6 +47,27 @@ test.describe('de-pseudo browser workflow', () => {
     expect(value).not.toContain('Mary Smith');
   });
 
+  test('does not ask the AI for a phantom "result" column by default, and adding an AI-generated field checks it in AI output', async ({ page }) => {
+    await createSession(page);
+    const promptSection = page.getByRole('heading', { name: 'Generated AI prompt' }).locator('..');
+    const before = await promptSection.locator('textarea').first().inputValue();
+    expect(before).toContain('columns: username.');
+    expect(before).not.toMatch(/\bresult\b/i);
+
+    const aiOutput = page.getByRole('heading', { name: 'AI output' }).locator('..');
+    await aiOutput.getByRole('textbox', { name: 'AI-generated output field name' }).fill('chosen_meal');
+    await aiOutput.getByRole('textbox', { name: 'AI-generated output field name' }).press('Enter');
+
+    const newFieldCheckbox = aiOutput.getByRole('checkbox', { name: 'chosen_meal' });
+    await expect(newFieldCheckbox).toBeChecked();
+    await expect(promptSection.locator('textarea').first()).toHaveValue(/columns: username, chosen_meal\./);
+
+    // Unchecking removes the field entirely rather than leaving a stray unchecked box.
+    await newFieldCheckbox.click();
+    await expect(aiOutput.getByRole('checkbox', { name: 'chosen_meal' })).toHaveCount(0);
+    await expect(promptSection.locator('textarea').first()).not.toHaveValue(/chosen_meal/);
+  });
+
   test('validates a tsv AI response (the default reply format) and exposes only the final local copy action', async ({ page }) => {
     await createSession(page);
     const promptSection = page.getByRole('heading', { name: 'Generated AI prompt' }).locator('..');
@@ -98,6 +119,68 @@ test.describe('de-pseudo browser workflow', () => {
     await page.getByRole('heading', { name: 'Paste AI result' }).locator('..').getByRole('textbox').fill(response);
     await page.getByRole('button', { name: /Validate & resolve locally/i }).click();
     await expect(page.getByRole('heading', { name: 'Final output' })).toBeVisible();
+  });
+
+  test('round-trips using the psv AI reply format', async ({ page }) => {
+    await createSession(page);
+    const promptSection = page.getByRole('heading', { name: 'Generated AI prompt' }).locator('..');
+    await promptSection.getByRole('button', { name: 'PSV', exact: true }).click();
+
+    const prompt = await promptSection.locator('textarea').first().inputValue();
+    expect(prompt).toContain('pipe-separated (PSV, using "|") table');
+    const sessionId = prompt.match(/SESSION ID:\s*([0-9a-f]{32})/)?.[1];
+    const pseudonyms = [...prompt.matchAll(/^([0-9a-f]{12})\|/gm)].map((m) => m[1]);
+    expect(pseudonyms.length).toBeGreaterThan(0);
+    const response = [`SESSION ID: ${sessionId}`, 'pseudonym|choice', ...pseudonyms.map((p) => `${p}|pizza`)].join('\n');
+
+    await page.getByRole('heading', { name: 'Paste AI result' }).locator('..').getByRole('textbox').fill(response);
+    await page.getByRole('button', { name: /Validate & resolve locally/i }).click();
+    await expect(page.getByRole('heading', { name: 'Final output' })).toBeVisible();
+  });
+
+  test('supports pasting pipe-separated input', async ({ page }) => {
+    await page.goto('/');
+    await page.getByRole('button', { name: 'PSV (pipe)' }).click();
+    await page.getByLabel('Paste data').fill('username|preference\nJohn Johnson|icecream\nMary Smith|pizza');
+    await expect(page.getByText(/Loaded 2 rows from Pasted text \(PSV\)/)).toBeVisible();
+    await page.getByRole('button', { name: 'Add this table' }).click();
+    await expect(page.getByText('Table 1 — 2 rows, identity column "username"')).toBeVisible();
+  });
+
+  test('accepts structured entry via the ID + free text format, growing a new row as each is filled', async ({ page }) => {
+    await page.goto('/');
+    await page.getByRole('button', { name: 'ID + free text' }).click();
+
+    // Loading/paste controls make no sense for manual entry and must be hidden.
+    await expect(page.getByRole('button', { name: 'Load file (CSV, Excel) +' })).toHaveCount(0);
+    await expect(page.getByLabel('Paste data')).toHaveCount(0);
+
+    const idBoxes = page.getByLabel('ID', { exact: true });
+    const textBoxes = page.getByLabel('Text', { exact: true });
+    await expect(idBoxes).toHaveCount(1);
+
+    await idBoxes.nth(0).fill('room-1');
+    await textBoxes.nth(0).fill('Needs extra towels and a late checkout.');
+    // Filling the only row must grow a fresh, empty one automatically.
+    await expect(idBoxes).toHaveCount(2);
+
+    await idBoxes.nth(1).fill('room-2');
+    await textBoxes.nth(1).fill('Prefers a quiet room away from the elevator.');
+    await expect(idBoxes).toHaveCount(3);
+
+    await expect(page.getByText('Loaded 2 rows from manual entry')).toBeVisible();
+    await page.getByRole('button', { name: 'Add this table' }).click();
+    await page.getByRole('button', { name: /Pseudonymize all & continue/i }).click();
+
+    // The id column is the identity column (pseudonymized); the free text is
+    // ordinary data the AI is meant to see.
+    await expect(page.getByRole('heading', { name: 'Privacy & columns — Table 1' })).toBeVisible();
+    const generated = page.getByRole('heading', { name: 'Generated AI prompt' }).locator('..').locator('textarea').first();
+    const value = await generated.inputValue();
+    expect(value).not.toContain('room-1');
+    expect(value).not.toContain('room-2');
+    expect(value).toContain('Needs extra towels and a late checkout.');
+    expect(value).toContain('Prefers a quiet room away from the elevator.');
   });
 
   test('cryptoshred returns the application to a clean input state', async ({ page }) => {

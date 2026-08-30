@@ -12,6 +12,11 @@ describe('loadClipboardText', () => {
     expect(await loadClipboardText(text, 'csv')).toEqual([{ username: 'Alice', preference: 'pizza' }]);
   });
 
+  it('parses pipe-separated text when psv is requested', async () => {
+    const text = 'username|preference\nAlice|pizza';
+    expect(await loadClipboardText(text, 'psv')).toEqual([{ username: 'Alice', preference: 'pizza' }]);
+  });
+
   it('does not misread a comma inside a value as a tsv delimiter', async () => {
     // Historically this parser guessed the delimiter from the text, which
     // could misfire on data like this; an explicit format must not.

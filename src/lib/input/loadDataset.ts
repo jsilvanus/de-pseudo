@@ -1,5 +1,5 @@
 export type LoadedRecord = Record<string, string | number | boolean | null>;
-export type DelimitedFormat = 'csv' | 'tsv';
+export type DelimitedFormat = 'csv' | 'tsv' | 'psv';
 
 /** Quote-aware delimited-text parser, shared by CSV and TSV so both handle a
  * quoted field containing the delimiter, a newline, or an escaped quote. */
@@ -24,6 +24,10 @@ function parseCsv(text: string): LoadedRecord[] {
 
 function parseTsv(text: string): LoadedRecord[] {
   return parseDelimited(text, '\t');
+}
+
+function parsePsv(text: string): LoadedRecord[] {
+  return parseDelimited(text, '|');
 }
 
 export async function loadSpreadsheet(file: File): Promise<LoadedRecord[]> {
@@ -55,5 +59,7 @@ export async function loadClipboardText(text: string, format: DelimitedFormat = 
     const parsed = JSON.parse(trimmed);
     if (Array.isArray(parsed)) return parsed.filter(v => v && typeof v === 'object');
   } catch { /* tabular clipboard fallback */ }
-  return format === 'csv' ? parseCsv(trimmed) : parseTsv(trimmed);
+  if (format === 'csv') return parseCsv(trimmed);
+  if (format === 'psv') return parsePsv(trimmed);
+  return parseTsv(trimmed);
 }

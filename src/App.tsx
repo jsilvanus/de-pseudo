@@ -12,6 +12,10 @@ import { useLanguage } from './i18n/LanguageContext';
 const vault = new SessionVault<MultiTableDataset>();
 type RawRecord = Record<string, any>;
 type LoadedTable = { name: string; rawRecords: RawRecord[]; identityColumn: string };
+/** 'idtext' is a structured entry mode (a growing list of id/free-text row
+ * pairs), not a text delimiter — it never reaches loadClipboardText. */
+type InputFormat = DelimitedFormat | 'idtext';
+type IdTextRow = { id: string; text: string };
 
 function guessIdentityColumn(records: RawRecord[]): string {
   if (!records.length) return '';
@@ -29,8 +33,9 @@ export default function App() {
   const [draftRecords, setDraftRecords] = useState<RawRecord[]>([]);
   const [draftIdentityColumn, setDraftIdentityColumn] = useState('');
   const [draftPasteText, setDraftPasteText] = useState('');
-  const [draftPasteFormat, setDraftPasteFormat] = useState<DelimitedFormat>('tsv');
+  const [draftPasteFormat, setDraftPasteFormat] = useState<InputFormat>('tsv');
   const [draftLoadedFrom, setDraftLoadedFrom] = useState('');
+  const [idTextRows, setIdTextRows] = useState<IdTextRow[]>([{ id: '', text: '' }]);
 
   const [dataset, setDataset] = useState<MultiTableDataset | null>(null);
   const [aliases, setAliases] = useState<Record<string, string>>({});
@@ -57,6 +62,16 @@ export default function App() {
   // — once the user types their own table name or task, stop overwriting it.
   useEffect(() => { if (!draftNameEdited) setDraftName(t('tableDefaultName', { n: tables.length + 1 })); }, [language]);
   useEffect(() => { if (!taskEdited) setTask(t('defaultTask')); }, [language]);
+
+  // "ID + free text" is structured manual entry rather than a pasted blob: every
+  // filled row becomes a draft record live, keyed to a fixed "id" identity column.
+  useEffect(() => {
+    if (draftPasteFormat !== 'idtext') return;
+    const filled = idTextRows.filter(r => r.id.trim() || r.text.trim());
+    setDraftRecords(filled.map(r => ({ id: r.id.trim(), text: r.text })));
+    setDraftIdentityColumn('id');
+    setDraftLoadedFrom(t('manualEntrySource'));
+  }, [idTextRows, draftPasteFormat, language]);
 
   // Keep the encrypted vault in sync with every schema edit (privacy mode,
   // reference targets, AI output fields) — not just the initial
@@ -138,14 +153,27 @@ export default function App() {
     catch (e) { setError(e instanceof Error ? e.message : t('errLoadFile')); } finally { setLoading(false); }
   }
   async function onDraftClipboard() {
+    if (draftPasteFormat === 'idtext') return;
     try { setLoading(true); const text = await navigator.clipboard.readText(); await draftLoadRecords(await loadClipboardText(text, draftPasteFormat), t('clipboardSource', { format: draftPasteFormat.toUpperCase() })); }
     catch (e) { setError(e instanceof Error ? e.message : t('errReadClipboard')); } finally { setLoading(false); }
   }
   async function onDraftPasteChange(text: string, formatOverride?: DelimitedFormat) {
     setDraftPasteText(text);
-    const activeFormat = formatOverride ?? draftPasteFormat;
+    const activeFormat = formatOverride ?? (draftPasteFormat === 'idtext' ? 'tsv' : draftPasteFormat);
     try { const records = await loadClipboardText(text, activeFormat); if (records.length) await draftLoadRecords(records, t('pastedSource', { format: activeFormat.toUpperCase() })); else if (!text.trim()) setDraftRecords([]); }
     catch { /* ignore invalid input while typing */ }
+  }
+
+  function updateIdTextRow(index: number, field: keyof IdTextRow, value: string) {
+    setIdTextRows(rows => {
+      const next = rows.map((r, i) => i === index ? { ...r, [field]: value } : r);
+      const last = next[next.length - 1];
+      if (last.id.trim() || last.text.trim()) next.push({ id: '', text: '' });
+      return next;
+    });
+  }
+  function removeIdTextRow(index: number) {
+    setIdTextRows(rows => { const next = rows.filter((_, i) => i !== index); return next.length ? next : [{ id: '', text: '' }]; });
   }
 
   function addTable() {
@@ -155,7 +183,7 @@ export default function App() {
     setTables(ts => [...ts, { name, rawRecords: draftRecords, identityColumn: draftIdentityColumn }]);
     setDraftName(t('tableDefaultName', { n: tables.length + 2 }));
     setDraftNameEdited(false);
-    setDraftRecords([]); setDraftIdentityColumn(''); setDraftPasteText(''); setDraftLoadedFrom(''); setError('');
+    setDraftRecords([]); setDraftIdentityColumn(''); setDraftPasteText(''); setDraftLoadedFrom(''); setIdTextRows([{ id: '', text: '' }]); setError('');
   }
   function removeTable(index: number) { setTables(ts => ts.filter((_, i) => i !== index)); }
 
@@ -207,7 +235,7 @@ export default function App() {
   async function handleShred() {
     await vault.shred();
     setDataset(null);
-    setTables([]); setDraftName(t('tableDefaultName', { n: 1 })); setDraftNameEdited(false); setDraftRecords([]); setDraftIdentityColumn(''); setDraftPasteText(''); setDraftLoadedFrom('');
+    setTables([]); setDraftName(t('tableDefaultName', { n: 1 })); setDraftNameEdited(false); setDraftRecords([]); setDraftIdentityColumn(''); setDraftPasteText(''); setDraftLoadedFrom(''); setIdTextRows([{ id: '', text: '' }]);
     setAliases({}); setCellReferences([]);
     setAiResult(''); setResolved('');
     setRestored(false); setCopied(null);
@@ -235,17 +263,28 @@ export default function App() {
       <Paper variant="outlined" sx={{ p: 2 }}><Stack spacing={2}>
         <Typography variant="subtitle2">{tables.length > 0 ? t('addAnotherTable') : t('addTableTitle')}</Typography>
         <TextField size="small" label={t('tableNameLabel')} value={draftName} onChange={e => { setDraftName(e.target.value); setDraftNameEdited(true); }} sx={{ maxWidth: 280 }} />
-        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
+        {draftPasteFormat !== 'idtext' && <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
           <input ref={fileInput} type="file" hidden accept=".csv,.xlsx,.xls,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel" onChange={onDraftFile} />
           <Button variant="contained" onClick={() => fileInput.current?.click()} disabled={loading}>{t('loadFile')}</Button>
           <Button variant="outlined" onClick={onDraftClipboard} disabled={loading}>{t('loadClipboard')}</Button>
-        </Stack>
-        <Stack direction="row" spacing={1} alignItems="center"><Typography variant="body2" color="text.secondary">{t('pasteFormatLabel')}</Typography><ToggleButtonGroup size="small" exclusive value={draftPasteFormat} onChange={(_, v: DelimitedFormat | null) => { if (v) { setDraftPasteFormat(v); onDraftPasteChange(draftPasteText, v); } }}><ToggleButton value="tsv">{t('formatTsvLong')}</ToggleButton><ToggleButton value="csv">{t('formatCsvLong')}</ToggleButton></ToggleButtonGroup></Stack>
-        <TextField label={t('pasteDataLabel')} multiline minRows={3} value={draftPasteText} onChange={e => onDraftPasteChange(e.target.value)} placeholder={draftPasteFormat === 'csv' ? 'room,size\nRoom A,4' : 'room\tsize\nRoom A\t4'} fullWidth />
+        </Stack>}
+        <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap><Typography variant="body2" color="text.secondary">{t('pasteFormatLabel')}</Typography><ToggleButtonGroup size="small" exclusive value={draftPasteFormat} onChange={(_, v: InputFormat | null) => {
+          if (!v) return;
+          setDraftPasteFormat(v);
+          if (v === 'idtext') { setDraftPasteText(''); setDraftRecords([]); setDraftIdentityColumn(''); }
+          else { setIdTextRows([{ id: '', text: '' }]); onDraftPasteChange(draftPasteText, v); }
+        }}><ToggleButton value="tsv">{t('formatTsvLong')}</ToggleButton><ToggleButton value="csv">{t('formatCsvLong')}</ToggleButton><ToggleButton value="psv">{t('formatPsvLong')}</ToggleButton><ToggleButton value="idtext">{t('formatIdTextLong')}</ToggleButton></ToggleButtonGroup></Stack>
+        {draftPasteFormat === 'idtext' ? <Stack spacing={1}>
+          {idTextRows.map((row, i) => <Stack key={i} direction="row" spacing={1} alignItems="center">
+            <TextField size="small" label={t('idBoxLabel')} value={row.id} onChange={e => updateIdTextRow(i, 'id', e.target.value)} sx={{ maxWidth: 200 }} />
+            <TextField size="small" label={t('textBoxLabel')} value={row.text} onChange={e => updateIdTextRow(i, 'text', e.target.value)} fullWidth multiline maxRows={4} />
+            {(row.id.trim() || row.text.trim()) && <Button size="small" color="error" onClick={() => removeIdTextRow(i)}>{t('remove')}</Button>}
+          </Stack>)}
+        </Stack> : <TextField label={t('pasteDataLabel')} multiline minRows={3} value={draftPasteText} onChange={e => onDraftPasteChange(e.target.value)} placeholder={draftPasteFormat === 'csv' ? 'room,size\nRoom A,4' : draftPasteFormat === 'psv' ? 'room|size\nRoom A|4' : 'room\tsize\nRoom A\t4'} fullWidth />}
         {draftRecords.length > 0 && <>
           <Typography variant="body2">{t('loadedRows', { count: draftRecords.length, source: draftLoadedFrom })}</Typography>
-          <FormControl size="small" sx={{ maxWidth: 280 }}><InputLabel>{t('identityColumn')}</InputLabel><Select label={t('identityColumn')} value={draftIdentityColumn} onChange={e => setDraftIdentityColumn(e.target.value)}>{Object.keys(draftRecords[0]).map(c => <MenuItem key={c} value={c}>{c}</MenuItem>)}</Select></FormControl>
-          <TableContainer sx={{ maxHeight: 280 }}><Table stickyHeader size="small"><TableHead><TableRow>{Object.keys(draftRecords[0]).map(c => <TableCell key={c}>{c}</TableCell>)}</TableRow></TableHead><TableBody>{draftRecords.map((row, ri) => <TableRow key={ri}>{Object.keys(draftRecords[0]).map(c => <TableCell key={c}>{String(row[c] ?? '')}</TableCell>)}</TableRow>)}</TableBody></Table></TableContainer>
+          {draftPasteFormat !== 'idtext' && <FormControl size="small" sx={{ maxWidth: 280 }}><InputLabel>{t('identityColumn')}</InputLabel><Select label={t('identityColumn')} value={draftIdentityColumn} onChange={e => setDraftIdentityColumn(e.target.value)}>{Object.keys(draftRecords[0]).map(c => <MenuItem key={c} value={c}>{c}</MenuItem>)}</Select></FormControl>}
+          {draftPasteFormat !== 'idtext' && <TableContainer sx={{ maxHeight: 280 }}><Table stickyHeader size="small"><TableHead><TableRow>{Object.keys(draftRecords[0]).map(c => <TableCell key={c}>{c}</TableCell>)}</TableRow></TableHead><TableBody>{draftRecords.map((row, ri) => <TableRow key={ri}>{Object.keys(draftRecords[0]).map(c => <TableCell key={c}>{String(row[c] ?? '')}</TableCell>)}</TableRow>)}</TableBody></Table></TableContainer>}
           <Button variant="contained" onClick={addTable}>{t('addThisTable')}</Button>
         </>}
       </Stack></Paper>
@@ -318,13 +357,14 @@ export default function App() {
             s.output = e.target.checked && !exists ? [...s.output, { name: column.name, source: column.mode === 'pseudonymize' ? 'pseudonym' : column.name }] : !e.target.checked ? s.output.filter(o => o.name !== column.name) : s.output;
             return s;
           })} />} label={column.name} />)}
+          {tbl.schema.output.filter(o => !tbl.schema.columns.some(c => c.name === o.name)).map(field => <FormControlLabel key={field.name} control={<Checkbox checked onChange={() => updateTableSchema(ti, s => { s.output = s.output.filter(o => o.name !== field.name); return s; })} />} label={field.name} />)}
           <TextField size="small" label={t('aiFieldNameLabel')} placeholder="selected_food" onKeyDown={e => { if (e.key === 'Enter') { const name = (e.target as HTMLInputElement).value.trim(); if (name) { updateTableSchema(ti, s => { if (!s.output.some(o => o.name === name)) s.output.push({ name }); return s; }); (e.target as HTMLInputElement).value = ''; } } }} helperText={t('aiFieldHelper')} fullWidth sx={{ mt: 1, maxWidth: 340 }} />
         </Box>)}
       </Stack></Paper>
 
       <Paper sx={{ p: 3 }}><Stack spacing={2}>
         <Typography variant="h5">{t('generatedPromptTitle')}</Typography>
-        <Stack direction="row" spacing={1} alignItems="center"><Typography variant="body2" color="text.secondary">{t('aiReplyFormatLabel')}</Typography><ToggleButtonGroup size="small" exclusive value={format} onChange={(_, v: ResponseFormat | null) => v && setFormat(v)}><ToggleButton value="tsv">{t('formatTsvShort')}</ToggleButton><ToggleButton value="csv">{t('formatCsvShort')}</ToggleButton><ToggleButton value="json">{t('formatJson')}</ToggleButton></ToggleButtonGroup></Stack>
+        <Stack direction="row" spacing={1} alignItems="center"><Typography variant="body2" color="text.secondary">{t('aiReplyFormatLabel')}</Typography><ToggleButtonGroup size="small" exclusive value={format} onChange={(_, v: ResponseFormat | null) => v && setFormat(v)}><ToggleButton value="tsv">{t('formatTsvShort')}</ToggleButton><ToggleButton value="csv">{t('formatCsvShort')}</ToggleButton><ToggleButton value="psv">{t('formatPsvShort')}</ToggleButton><ToggleButton value="json">{t('formatJson')}</ToggleButton></ToggleButtonGroup></Stack>
         {referenceError ? <Alert severity="error">{t('promptBlocked')}</Alert> : <><TextField multiline minRows={8} value={prompt} InputProps={{ readOnly: true }} fullWidth /><Button variant="outlined" onClick={() => copy(prompt, 'prompt')}>{copied === 'prompt' ? t('copied') : t('copyPrompt')}</Button></>}
       </Stack></Paper>
 
