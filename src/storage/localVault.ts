@@ -1,58 +1,65 @@
 import type { EncryptedPayload } from '../crypto/vault';
 
-export type PersistedVault = {
-  generation: string;
-  payload: EncryptedPayload;
-};
+export type PersistedVault = { generation: string; payload: EncryptedPayload };
 
 const DB_NAME = 'de-pseudo';
-const STORE_NAME = 'vault';
+const DB_VERSION = 3;
+const VAULT_STORE = 'vault';
+const KEY_STORE = 'keys';
 const RECORD_KEY = 'active';
 
 function openDb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
-    const request = indexedDB.open(DB_NAME, 3);
+    const request = indexedDB.open(DB_NAME, DB_VERSION);
     request.onupgradeneeded = () => {
       const db = request.result;
-      if (!db.objectStoreNames.contains(STORE_NAME)) db.createObjectStore(STORE_NAME);
-      if (!db.objectStoreNames.contains('keys')) db.createObjectStore('keys');
+      if (!db.objectStoreNames.contains(VAULT_STORE)) db.createObjectStore(VAULT_STORE);
+      if (!db.objectStoreNames.contains(KEY_STORE)) db.createObjectStore(KEY_STORE);
     };
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error ?? new Error('Could not open local vault'));
   });
 }
 
-export async function saveEncryptedVault(value: PersistedVault): Promise<void> {
+export async function saveSession(value: PersistedVault, key: CryptoKey): Promise<void> {
   const db = await openDb();
   await new Promise<void>((resolve, reject) => {
-    const tx = db.transaction(STORE_NAME, 'readwrite');
-    tx.objectStore(STORE_NAME).put(value, RECORD_KEY);
+    const tx = db.transaction([VAULT_STORE, KEY_STORE], 'readwrite');
+    tx.objectStore(VAULT_STORE).put(value, RECORD_KEY);
+    tx.objectStore(KEY_STORE).put(key, RECORD_KEY);
     tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error ?? new Error('Could not save local vault'));
-    tx.onabort = () => reject(tx.error ?? new Error('Local vault transaction aborted'));
+    tx.onerror = () => reject(tx.error ?? new Error('Could not save local session'));
+    tx.onabort = () => reject(tx.error ?? new Error('Local session transaction aborted'));
   });
   db.close();
 }
 
-export async function loadEncryptedVault(): Promise<PersistedVault | null> {
+export async function loadSession(): Promise<{ stored: PersistedVault; key: CryptoKey } | null> {
   const db = await openDb();
-  const value = await new Promise<PersistedVault | undefined>((resolve, reject) => {
-    const request = db.transaction(STORE_NAME, 'readonly').objectStore(STORE_NAME).get(RECORD_KEY);
-    request.onsuccess = () => resolve(request.result as PersistedVault | undefined);
-    request.onerror = () => reject(request.error ?? new Error('Could not read local vault'));
+  const result = await new Promise<{ stored: PersistedVault; key: CryptoKey } | null>((resolve, reject) => {
+    const tx = db.transaction([VAULT_STORE, KEY_STORE], 'readonly');
+    const vaultRequest = tx.objectStore(VAULT_STORE).get(RECORD_KEY);
+    const keyRequest = tx.objectStore(KEY_STORE).get(RECORD_KEY);
+    tx.oncomplete = () => {
+      const stored = vaultRequest.result as PersistedVault | undefined;
+      const key = keyRequest.result as CryptoKey | undefined;
+      resolve(stored && key ? { stored, key } : null);
+    };
+    tx.onerror = () => reject(tx.error ?? new Error('Could not read local session'));
   });
   db.close();
-  return value ?? null;
+  return result;
 }
 
-export async function shredLocalVault(): Promise<void> {
+export async function shredSession(): Promise<void> {
   const db = await openDb();
   await new Promise<void>((resolve, reject) => {
-    const tx = db.transaction(STORE_NAME, 'readwrite');
-    tx.objectStore(STORE_NAME).clear();
+    const tx = db.transaction([VAULT_STORE, KEY_STORE], 'readwrite');
+    tx.objectStore(VAULT_STORE).delete(RECORD_KEY);
+    tx.objectStore(KEY_STORE).delete(RECORD_KEY);
     tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error ?? new Error('Could not shred local vault'));
-    tx.onabort = () => reject(tx.error ?? new Error('Local vault shred aborted'));
+    tx.onerror = () => reject(tx.error ?? new Error('Could not shred local session'));
+    tx.onabort = () => reject(tx.error ?? new Error('Local session shred aborted'));
   });
   db.close();
 }
