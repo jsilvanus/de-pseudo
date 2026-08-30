@@ -1,3 +1,4 @@
+import { findInitialMatches } from './references';
 import type { CellReference, CellValue, DatasetSchema, InputRecord, PseudonymizedRecord } from './types';
 
 /**
@@ -6,11 +7,14 @@ import type { CellReference, CellValue, DatasetSchema, InputRecord, Pseudonymize
  * "Anna Benson" exist). `cellReferences` pin a specific cell to a specific
  * row and take precedence; `aliases` resolve every occurrence of a given
  * free-text value in a column to a chosen target identity value, keyed by
- * `${columnName}:${rawReferenceText}`.
+ * `${columnName}:${rawReferenceText}`. `notes`, if provided, is pushed to
+ * whenever a value is resolved by inference rather than an exact match or an
+ * explicit choice, so the caller can surface it for the user to verify.
  */
 export type ReferenceOverrides = {
   aliases?: Record<string, string>;
   cellReferences?: CellReference[];
+  notes?: string[];
 };
 
 export function defaultSchema(records: InputRecord[], identityColumn = 'username'): DatasetSchema {
@@ -61,6 +65,19 @@ function resolveReferenceValue(
   const alias = overrides.aliases?.[`${columnName}:${value}`];
   const aliasResolved = alias ? lookup.get(alias) : undefined;
   if (aliasResolved) return aliasResolved;
+
+  // A first-name-plus-last-initial match (e.g. "Anna J." for "Anna Johnson")
+  // is a weaker, inferred signal, so only act on it when it is unique, and
+  // always record a note — this must stay visibly different from a
+  // confirmed exact match or explicit choice, not silently identical to one.
+  const initialMatches = findInitialMatches([...lookup.keys()], value);
+  if (initialMatches.length === 1) {
+    const inferred = lookup.get(initialMatches[0]);
+    if (inferred) {
+      overrides.notes?.push(`${columnName}: "${value}" was matched to "${initialMatches[0]}" by first name and last initial — verify this is correct.`);
+      return inferred;
+    }
+  }
 
   unresolved.add(`${columnName}: "${value}"`);
   return value;

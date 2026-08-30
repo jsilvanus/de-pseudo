@@ -72,12 +72,12 @@ test.describe('de-pseudo browser workflow', () => {
 
 test.describe('ambiguous and unmatched reference text', () => {
   // Anna Johnson and Anna Benson share a first name, so a bare "Anna" is
-  // ambiguous between them; "Anna B." matches neither exactly and has no
-  // automatic candidate at all. Neither should ever reach the generated
-  // prompt unresolved.
+  // ambiguous between them; "Anna Q." matches neither surname's initial and
+  // has no automatic candidate at all. Neither should ever reach the
+  // generated prompt unresolved.
   const referenceInput = [
     ['username', 'friend'],
-    ['Anna Johnson', 'Anna B.'],
+    ['Anna Johnson', 'Anna Q.'],
     ['John Johnson', 'Anna'],
     ['Anna Benson', ''],
   ].map((row) => row.join('\t')).join('\n');
@@ -96,7 +96,7 @@ test.describe('ambiguous and unmatched reference text', () => {
 
     const section4 = page.getByRole('heading', { name: '4. Resolve text references' }).locator('..');
     await expect(section4).toContainText('Unresolved references');
-    await expect(section4).toContainText('"Anna B."');
+    await expect(section4).toContainText('"Anna Q."');
     await expect(section4).toContainText('"Anna"');
     // The UI should say *why* each one is unresolved, not just that it is.
     await expect(section4).toContainText('no automatic match');
@@ -109,7 +109,7 @@ test.describe('ambiguous and unmatched reference text', () => {
     const personSelects = section4.getByRole('combobox');
     await expect(personSelects).toHaveCount(2);
 
-    // Even the zero-candidate "Anna B." must still let a person be picked
+    // Even the zero-candidate "Anna Q." must still let a person be picked
     // manually — every identity is offered, not just automatic matches.
     await personSelects.nth(0).click();
     await expect(page.getByRole('option')).toHaveText(['Unresolved', 'Anna Johnson', 'John Johnson', 'Anna Benson']);
@@ -127,7 +127,41 @@ test.describe('ambiguous and unmatched reference text', () => {
     expect(prompt).not.toContain('Anna Johnson');
     expect(prompt).not.toContain('Anna Benson');
     expect(prompt).not.toContain('John Johnson');
-    expect(prompt).not.toContain('Anna B.');
+    expect(prompt).not.toContain('Anna Q.');
     expect(prompt).toMatch(/pseudonym\tfriend/);
+  });
+
+  test('auto-resolves a first-name-plus-last-initial reference with a visible note, without blocking', async ({ page }) => {
+    // "Anna J." uniquely narrows to Anna Johnson (Anna Benson's initial
+    // doesn't fit), so this should resolve on its own — but still say so,
+    // rather than looking identical to an exact, unambiguous match.
+    const initialInput = [
+      ['username', 'friend'],
+      ['Anna Johnson', ''],
+      ['John Johnson', 'Anna J.'],
+      ['Anna Benson', ''],
+    ].map((row) => row.join('\t')).join('\n');
+
+    await page.goto('/');
+    await page.getByLabel('Paste data').fill(initialInput);
+    await page.getByRole('button', { name: /Pseudonymize & save locally/i }).click();
+    await setFriendColumnToReference(page);
+
+    const section4 = page.getByRole('heading', { name: '4. Resolve text references' }).locator('..');
+    await expect(section4).toContainText('was matched to "Anna Johnson" by first name and last initial');
+    await expect(section4).toContainText('auto-matched by initial to "Anna Johnson"');
+    await expect(section4).not.toContainText('Unresolved references');
+
+    // No manual pick needed: the prompt generates immediately, already
+    // carrying the inferred match.
+    const section7 = page.getByRole('heading', { name: '7. Generated AI prompt' }).locator('..');
+    await expect(section7).not.toContainText('Prompt generation is blocked');
+    const prompt = await section7.locator('textarea').first().inputValue();
+    expect(prompt).not.toContain('Anna Johnson');
+    expect(prompt).not.toContain('Anna J.');
+
+    // John Johnson's friend column must carry a real pseudonym (Anna
+    // Johnson's), not be left empty or leak the literal reference text.
+    expect(prompt).toMatch(/^[0-9a-f]{12}\t[0-9a-f]{12}$/m);
   });
 });
