@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { pseudonymizeDataset } from '../dataset/pseudonymize';
-import { resolveResult } from './resolveResult';
+import { pseudonymize } from '../../lib/core';
+import { resolveResult } from './resolve';
 
 describe('result resolver adversarial inputs', () => {
   const input = [
@@ -9,8 +9,17 @@ describe('result resolver adversarial inputs', () => {
     { username: 'Carol', data: 'wants tea' },
   ];
 
+  function makeMappings() {
+    const dataset = pseudonymize(input);
+    const mappings = Object.entries(dataset.mapping).map(([pseudonym, record]) => ({
+      pseudonym,
+      identity: String(record.username),
+    }));
+    return { dataset, mappings };
+  }
+
   it('does not reveal identities for arbitrary unknown strings', () => {
-    const { mapping } = pseudonymizeDataset(input);
+    const { mappings } = makeMappings();
     const candidates = [
       '', 'Alice', 'Bob', 'Carol', 'alice', 'bob',
       'undefined', 'null', 'NaN', 'constructor', 'prototype',
@@ -19,8 +28,8 @@ describe('result resolver adversarial inputs', () => {
     ];
 
     for (const candidate of candidates) {
-      const resolved = resolveResult(`${candidate} -> coffee`, mapping);
-      if (!Object.keys(mapping).includes(candidate)) {
+      const resolved = resolveResult(`${candidate} -> coffee`, mappings);
+      if (!mappings.some(m => m.pseudonym === candidate)) {
         expect(resolved).not.toContain('Alice');
         expect(resolved).not.toContain('Bob');
         expect(resolved).not.toContain('Carol');
@@ -29,30 +38,31 @@ describe('result resolver adversarial inputs', () => {
   });
 
   it('preserves punctuation and Unicode around valid pseudonyms', () => {
-    const { rows, mapping } = pseudonymizeDataset(input);
-    for (const row of rows) {
-      const result = `【${row.username}】 → 🍕 café — ${row.username}!`;
-      const resolved = resolveResult(result, mapping);
-      expect(resolved).toContain(mapping[row.username]);
+    const { dataset, mappings } = makeMappings();
+    for (const row of dataset.rows) {
+      const result = `【${row.pseudonym}】 → 🍕 café — ${row.pseudonym}!`;
+      const resolved = resolveResult(result, mappings);
+      expect(resolved.some(r => r.identity === dataset.mapping[row.pseudonym].username)).toBe(true);
     }
   });
 
   it('handles repeated valid pseudonyms deterministically', () => {
-    const { rows, mapping } = pseudonymizeDataset(input);
-    const token = rows[0].username;
-    const resolved = resolveResult(`${token} -> one\n${token} -> two\n${token} -> three`, mapping);
-    expect((resolved.match(new RegExp(mapping[token], 'g')) ?? []).length).toBe(3);
+    const { dataset, mappings } = makeMappings();
+    const token = dataset.rows[0].pseudonym;
+    const resolved = resolveResult(`${token} -> one\n${token} -> two\n${token} -> three`, mappings);
+    expect(resolved).toHaveLength(1);
+    expect((resolved[0].result.match(new RegExp(String(dataset.mapping[token].username), 'g')) ?? []).length).toBe(3);
   });
 
   it('does not treat a token-like substring as a token', () => {
-    const { rows, mapping } = pseudonymizeDataset(input);
-    const token = rows[0].username;
-    const resolved = resolveResult(`prefix-${token}-suffix -> coffee`, mapping);
-    expect(resolved).not.toContain(mapping[token]);
+    const { dataset, mappings } = makeMappings();
+    const token = dataset.rows[0].pseudonym;
+    const resolved = resolveResult(`prefix-${token}-suffix -> coffee`, mappings);
+    expect(resolved).toHaveLength(0);
   });
 
   it('survives generated random noise without throwing', () => {
-    const { mapping } = pseudonymizeDataset(input);
+    const { mappings } = makeMappings();
     const alphabet = 'abcdefghijklmnopqrstuvwxyz0123456789 -_.,:;()[]{}😀äöå你好';
 
     for (let i = 0; i < 500; i++) {
@@ -61,7 +71,7 @@ describe('result resolver adversarial inputs', () => {
       for (let j = 0; j < length; j++) {
         noise += alphabet[Math.floor(Math.random() * alphabet.length)];
       }
-      expect(() => resolveResult(noise, mapping)).not.toThrow();
+      expect(() => resolveResult(noise, mappings)).not.toThrow();
     }
   });
 });
