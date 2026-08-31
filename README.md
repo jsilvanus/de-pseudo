@@ -28,14 +28,26 @@ Anna | wants pizza      fnfifk32 | wants pizza    fnfifk32 -> pizza       Anna -
 
 Pseudonymization is not anonymization — attribute combinations can still identify someone. de-pseudo helps you avoid handing names to a third-party AI, but the resulting data may still be identifying, so review it before sharing further.
 
+## Browser extension
+
+de-pseudo is also available as a Chrome/Edge side panel extension — the same app, opened from the toolbar instead of a tab, so it can sit open alongside an AI chat tab. It reuses the web app's code unchanged, and adds two optional buttons that fill a recognized AI chat tab's message box with the generated prompt and pull its latest reply back in (ChatGPT, Claude, Copilot, Gemini) — never auto-submitting, so you still review what's sent. See [BROWSER-EXTENSION-PLAN.md](./BROWSER-EXTENSION-PLAN.md) for the design and known limitations, and [PUBLISHING.md](./PUBLISHING.md) for the Chrome Web Store / Edge Add-ons submission checklist.
+
+```bash
+npm run build:extension   # builds dist-extension/
+```
+
+To load it locally: open `chrome://extensions` (or `edge://extensions`), enable Developer mode, choose "Load unpacked", and select `dist-extension/`. Click the toolbar icon to open the side panel.
+
 ## Development
 
 ```bash
 npm install
-npm run dev       # start the dev server
-npm run build     # type-check and build for production
-npm run test      # unit tests (vitest)
-npm run test:e2e  # end-to-end tests (playwright)
+npm run dev                # start the dev server
+npm run build               # type-check and build the web app for production
+npm run build:extension     # type-check and build the browser extension
+npm run test                # unit tests (vitest)
+npm run test:e2e            # web app end-to-end tests (playwright)
+npm run test:e2e:extension  # extension end-to-end test (playwright, needs build:extension first)
 ```
 
 See [PLAN.md](./PLAN.md) for the architecture and design rationale.

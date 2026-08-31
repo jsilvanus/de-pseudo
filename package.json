@@ -1,15 +1,17 @@
 {
   "name": "de-pseudo",
   "private": true,
-  "version": "0.5.0",
+  "version": "0.7.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "build:extension": "tsc -b && vite build --config vite.config.extension.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
+    "test:e2e:extension": "playwright test --config playwright.config.extension.ts",
     "preview": "vite preview"
   },
   "dependencies": {
@@ -23,6 +25,7 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.55.0",
+    "@types/chrome": "^0.2.7",
     "@types/react": "^19.1.10",
     "@types/react-dom": "^19.1.7",
     "@vitejs/plugin-react": "^5.0.2",

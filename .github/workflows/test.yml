@@ -79,3 +79,59 @@ jobs:
           path: test-results/
           if-no-files-found: ignore
           retention-days: 14
+
+  build-extension:
+    name: Browser extension build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Build extension
+        run: npm run build:extension
+      - name: Validate manifest.json
+        run: node -e "JSON.parse(require('fs').readFileSync('dist-extension/manifest.json', 'utf-8'))"
+      - name: Zip unpacked extension
+        run: cd dist-extension && zip -r ../de-pseudo-extension.zip .
+      - name: Upload extension build
+        uses: actions/upload-artifact@v4
+        with:
+          name: de-pseudo-extension
+          path: de-pseudo-extension.zip
+          retention-days: 14
+
+  playwright-extension:
+    name: Playwright extension tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+      - name: Build extension
+        run: npm run build:extension
+      - name: Playwright extension E2E
+        run: npm run test:e2e:extension
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-extension-report
+          path: playwright-report/
+          if-no-files-found: ignore
+          retention-days: 14
