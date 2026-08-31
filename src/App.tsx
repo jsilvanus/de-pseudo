@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Box, Button, Checkbox, Chip, Container, FormControl, FormControlLabel, InputLabel, Link, MenuItem, Paper, Select, Stack, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, TextField, ToggleButton, ToggleButtonGroup, Typography } from '@mui/material';
 import AddRoundedIcon from '@mui/icons-material/AddRounded';
-import { pseudonymizeTables, applySchemas, buildMultiTablePrompt, parseSessionResponse, validateResults, projectOutput, defaultSchema, findReferenceCandidates, findInitialMatches, type DatasetSchema, type ResponseFormat, type MultiTableDataset, type NamedPseudonymizedTable, type SchemaTableInput } from './lib/core';
+import { pseudonymizeTables, applySchemas, buildMultiTablePrompt, parseSessionResponse, validateResults, projectOutput, defaultSchema, findReferenceCandidates, findInitialMatches, pseudonymizedTable, delimiterFor, type DatasetSchema, type ResponseFormat, type MultiTableDataset, type NamedPseudonymizedTable, type SchemaTableInput } from './lib/core';
 import { loadFile, loadClipboardText, type DelimitedFormat } from './lib/input/loadDataset';
 import { SessionVault } from './domain/shred/sessionVault';
 import { resolveText } from './domain/result/resolve';
@@ -17,6 +17,10 @@ type LoadedTable = { name: string; rawRecords: RawRecord[]; identityColumn: stri
  * pairs), not a text delimiter — it never reaches loadClipboardText. */
 type InputFormat = DelimitedFormat | 'idtext';
 type IdTextRow = { id: string; text: string };
+/** The final locally-resolved output can be rendered in any of these — unlike
+ * ResponseFormat, there's no 'lines' variant here, since that shape only
+ * makes sense as a hint to the AI, not as a table export format. */
+type FinalFormat = 'json' | 'tsv' | 'csv' | 'psv';
 
 function guessIdentityColumn(records: RawRecord[]): string {
   if (!records.length) return '';
@@ -46,7 +50,9 @@ export default function App() {
   const [promptDraft, setPromptDraft] = useState('');
   const [format, setFormat] = useState<ResponseFormat>('tsv');
   const [aiResult, setAiResult] = useState('');
-  const [resolved, setResolved] = useState('');
+  const [resolvedProjected, setResolvedProjected] = useState<Record<string, unknown>[] | null>(null);
+  const [resolvedMappings, setResolvedMappings] = useState<{ pseudonym: string; identity: string }[]>([]);
+  const [finalFormat, setFinalFormat] = useState<FinalFormat>('json');
   const [error, setError] = useState('');
   const [restored, setRestored] = useState(false);
   const [copied, setCopied] = useState<'prompt' | 'result' | null>(null);
@@ -151,6 +157,16 @@ export default function App() {
     [dataset],
   );
 
+  // Rendered fresh from the underlying resolved data whenever the chosen
+  // final-output format changes — no need to re-validate the AI's reply.
+  const finalOutputText = useMemo(() => {
+    if (!resolvedProjected) return '';
+    const rendered = finalFormat === 'json'
+      ? JSON.stringify(resolvedProjected, null, 2)
+      : pseudonymizedTable(resolvedProjected, delimiterFor(finalFormat));
+    return resolveText(rendered, resolvedMappings);
+  }, [resolvedProjected, resolvedMappings, finalFormat]);
+
   async function copy(text: string, kind: 'prompt' | 'result') { await navigator.clipboard.writeText(text); setCopied(kind); window.setTimeout(() => setCopied(c => c === kind ? null : c), 1800); }
 
   async function draftLoadRecords(records: RawRecord[], source: string) {
@@ -202,7 +218,7 @@ export default function App() {
 
   async function handlePseudonymizeAll() {
     try {
-      setError(''); setResolved('');
+      setError(''); setResolvedProjected(null);
       if (!tables.length) throw new Error(t('errLoadAtLeastOne'));
       const { tables: baseTables, mapping } = pseudonymizeTables(tables.map(t => ({ name: t.name, records: t.rawRecords, identityColumn: t.identityColumn })));
       const schemaInputs: SchemaTableInput[] = tables.map((t, i) => {
@@ -241,8 +257,9 @@ export default function App() {
         return t.rows.map(r => ({ pseudonym: r.pseudonym, identity: String(dataset.mapping[r.pseudonym]?.[idCol ?? ''] ?? r.pseudonym) }));
       });
       setError('');
-      setResolved(resolveText(JSON.stringify(projected, null, 2), mappings));
-    } catch (e) { setError(e instanceof Error ? e.message : t('errValidate')); setResolved(''); }
+      setResolvedProjected(projected);
+      setResolvedMappings(mappings);
+    } catch (e) { setError(e instanceof Error ? e.message : t('errValidate')); setResolvedProjected(null); }
   }
 
   async function handleShred() {
@@ -250,7 +267,7 @@ export default function App() {
     setDataset(null);
     setTables([]); setDraftName(t('tableDefaultName', { n: 1 })); setDraftNameEdited(false); setDraftRecords([]); setDraftIdentityColumn(''); setDraftPasteText(''); setDraftLoadedFrom(''); setIdTextRows([{ id: '', text: '' }]);
     setAliases({}); setCellReferences([]);
-    setAiResult(''); setResolved('');
+    setAiResult(''); setResolvedProjected(null); setResolvedMappings([]);
     setRestored(false); setCopied(null);
     setError(t('sessionShredded'));
     setPromptDraft(''); setFormat('tsv');
@@ -388,7 +405,12 @@ export default function App() {
       </Stack></Paper>
 
       <Paper sx={{ p: 3 }}><Stack spacing={2}><Typography variant="h5">{t('pasteAiResultTitle')}</Typography><TextField multiline minRows={7} value={aiResult} onChange={e => setAiResult(e.target.value)} fullWidth /><Button variant="contained" onClick={handleResolve}>{t('validateAndResolve')}</Button></Stack></Paper>
-      {resolved && <Paper sx={{ p: 3 }}><Stack spacing={2}><Typography variant="h5">{t('finalOutputTitle')}</Typography><TextField multiline minRows={5} value={resolved} InputProps={{ readOnly: true }} fullWidth /><Button variant="contained" onClick={() => copy(resolved, 'result')}>{copied === 'result' ? t('copied') : t('copy')}</Button></Stack></Paper>}
+      {resolvedProjected && <Paper sx={{ p: 3 }}><Stack spacing={2}>
+        <Typography variant="h5">{t('finalOutputTitle')}</Typography>
+        <Stack direction="row" spacing={1} alignItems="center"><Typography variant="body2" color="text.secondary">{t('finalOutputFormatLabel')}</Typography><ToggleButtonGroup size="small" exclusive value={finalFormat} onChange={(_, v: FinalFormat | null) => v && setFinalFormat(v)}><ToggleButton value="json">{t('formatJson')}</ToggleButton><ToggleButton value="tsv">{t('formatTsvShort')}</ToggleButton><ToggleButton value="csv">{t('formatCsvShort')}</ToggleButton><ToggleButton value="psv">{t('formatPsvShort')}</ToggleButton></ToggleButtonGroup></Stack>
+        <TextField multiline minRows={5} value={finalOutputText} InputProps={{ readOnly: true }} fullWidth />
+        <Button variant="contained" onClick={() => copy(finalOutputText, 'result')}>{copied === 'result' ? t('copied') : t('copy')}</Button>
+      </Stack></Paper>}
       <Paper sx={{ p: 3 }}><Stack spacing={2}><Typography variant="h5">{t('cryptoshredTitle')}</Typography><Button color="error" variant="contained" onClick={handleShred}>{t('shredSession')}</Button></Stack></Paper>
     </>}
     <Box component="footer" sx={{ pt: 2, borderTop: '1px solid', borderColor: 'divider', display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 1 }}>

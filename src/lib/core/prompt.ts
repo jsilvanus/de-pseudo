@@ -16,15 +16,23 @@ const COMMON_IDENTITY_COLUMNS = new Set([
   'postal address', 'ssn', 'social security number',
 ]);
 
+// The AI may want to add explanation, reasoning, or other commentary around
+// the actual answer — rather than forbidding that outright, let it, as long
+// as the required data is wrapped in a block delimited by these exact marker
+// lines, matching the "--- TABLE ---" / "--- END TABLE ---" convention
+// already used for the data blocks sent *to* the AI. A reply with no other
+// content can skip the wrapper — the parser accepts both.
+const RESULT_BLOCK_NOTE = 'You may add other explanation or information elsewhere in your reply. If you do, put the required data below inside a block starting with a line that says exactly "--- RESULT ---" and ending with a line that says exactly "--- END RESULT ---" — only what is inside that block will be read as data. If your reply contains nothing else, you may omit the block and return just the data below.';
+
 export function responseInstructions(format: ResponseFormat = 'tsv', sessionId = '<session-id>', outputFields: string[] = ['pseudonym', 'choice']): string {
   const fields = outputFields.join(', ');
   if (format === 'json') return [
-    'OUTPUT FORMAT', 'Return ONLY a JSON object.',
-    `{"sessionId":"${sessionId}","results":[{${outputFields.map(f => `"${f}":"<value>"`).join(',')}}]}`,
+    'OUTPUT FORMAT',
+    `A JSON object: {"sessionId":"${sessionId}","results":[{${outputFields.map(f => `"${f}":"<value>"`).join(',')}}]}`,
     `Set sessionId exactly to: ${sessionId}`, `Return only these fields: ${fields}.`,
     'Use every pseudonym exactly as provided. Return one object per pseudonym.',
     'Do not invent, modify, or omit pseudonyms. Do not include real names or identifying information.',
-    'Do not include markdown or explanatory text.',
+    RESULT_BLOCK_NOTE,
   ].join('\n');
   if (format === 'tsv') return [
     'OUTPUT FORMAT',
@@ -34,7 +42,7 @@ export function responseInstructions(format: ResponseFormat = 'tsv', sessionId =
     'Leave one blank line after the header row, before the data rows.',
     'The pseudonym column must be present and must contain every pseudonym exactly once.',
     'Do not invent, modify, or omit pseudonyms. Do not include real names or identifying information.',
-    'Do not include markdown or explanatory text.',
+    RESULT_BLOCK_NOTE,
   ].join('\n');
   if (format === 'csv') return [
     'OUTPUT FORMAT',
@@ -45,7 +53,7 @@ export function responseInstructions(format: ResponseFormat = 'tsv', sessionId =
     'The pseudonym column must be present and must contain every pseudonym exactly once.',
     'Quote a field in double quotes if it contains a comma, a quote, or a line break.',
     'Do not invent, modify, or omit pseudonyms. Do not include real names or identifying information.',
-    'Do not include markdown or explanatory text.',
+    RESULT_BLOCK_NOTE,
   ].join('\n');
   if (format === 'psv') return [
     'OUTPUT FORMAT',
@@ -54,14 +62,16 @@ export function responseInstructions(format: ResponseFormat = 'tsv', sessionId =
     `Then return a pipe-separated (PSV, using "|") table with these columns: ${fields}.`,
     'Leave one blank line after the header row, before the data rows.',
     'The pseudonym column must be present and must contain every pseudonym exactly once.',
-    'Do not include markdown or explanatory text.',
+    'Do not invent, modify, or omit pseudonyms. Do not include real names or identifying information.',
+    RESULT_BLOCK_NOTE,
   ].join('\n');
   return [
     'OUTPUT FORMAT', `First line must be exactly: SESSION ID: ${sessionId}`,
     `Then return exactly one line for each pseudonym: <pseudonym> -> <choice>`,
     `Return only these output fields: ${fields}.`,
     'Use each pseudonym exactly as provided. Do not invent, modify, or omit pseudonyms.',
-    'Do not include real names or identifying information. Do not use a markdown table or explanatory text.',
+    'Do not include real names or identifying information. Do not use a markdown table.',
+    RESULT_BLOCK_NOTE,
   ].join('\n');
 }
 
@@ -81,7 +91,7 @@ function psvCell(value: unknown): string {
   return String(value).replace(/\r?\n/g, ' ').replace(/\|/g, ' ');
 }
 
-function delimiterFor(format: ResponseFormat): ',' | '\t' | '|' {
+export function delimiterFor(format: ResponseFormat): ',' | '\t' | '|' {
   if (format === 'csv') return ',';
   if (format === 'psv') return '|';
   return '\t';

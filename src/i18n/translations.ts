@@ -115,6 +115,7 @@ export const translations = {
     validateAndResolve: 'Validate & resolve locally',
 
     finalOutputTitle: 'Final output',
+    finalOutputFormatLabel: 'Output format:',
     copy: 'Copy',
 
     cryptoshredTitle: 'Cryptoshred',
@@ -233,6 +234,7 @@ export const translations = {
     validateAndResolve: 'Vahvista ja ratkaise paikallisesti',
 
     finalOutputTitle: 'Lopullinen tulos',
+    finalOutputFormatLabel: 'Tulostemuoto:',
     copy: 'Kopioi',
 
     cryptoshredTitle: 'Kryptosilppuri',
@@ -351,6 +353,7 @@ export const translations = {
     validateAndResolve: 'Validera och lös lokalt',
 
     finalOutputTitle: 'Slutresultat',
+    finalOutputFormatLabel: 'Utdataformat:',
     copy: 'Kopiera',
 
     cryptoshredTitle: 'Kryptoförstöring',
