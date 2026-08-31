@@ -31,6 +31,12 @@ function parseDelimitedRows(text: string, delimiter: string): ParsedResult[] {
   const header = data[0].split(delimiter).map(v => v.trim());
   const pseudoIndex = header.findIndex(v => v.toLowerCase() === 'pseudonym');
   if (pseudoIndex < 0) throw new Error('Delimited response must contain a pseudonym column');
+  // A missing line break between the header and the data (or between rows)
+  // merges everything onto one line — the header alone would then contain
+  // every row's values too, and there'd be no separate data lines left at
+  // all. That's a distinct, fixable problem from "no rows expected", so it
+  // gets its own clear error instead of silently resolving to zero results.
+  if (data.length < 2) throw new Error('No data rows found after the header — make sure each row is on its own line, not all run together on one line.');
   return data.slice(1).map((line, index) => {
     const values = line.split(delimiter);
     const pseudonym = (values[pseudoIndex] ?? '').trim();

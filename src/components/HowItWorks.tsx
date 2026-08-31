@@ -1,5 +1,5 @@
-import { Fragment } from 'react';
-import { Alert, Avatar, Box, Paper, Stack, Typography } from '@mui/material';
+import { Fragment, useState } from 'react';
+import { Alert, Avatar, Box, Button, IconButton, Paper, Stack, Tooltip, Typography } from '@mui/material';
 import TableRowsRoundedIcon from '@mui/icons-material/TableRowsRounded';
 import TheaterComedyRoundedIcon from '@mui/icons-material/TheaterComedyRounded';
 import EditNoteRoundedIcon from '@mui/icons-material/EditNoteRounded';
@@ -7,6 +7,8 @@ import SmartToyRoundedIcon from '@mui/icons-material/SmartToyRounded';
 import LockOpenRoundedIcon from '@mui/icons-material/LockOpenRounded';
 import DeleteForeverRoundedIcon from '@mui/icons-material/DeleteForeverRounded';
 import ArrowForwardRoundedIcon from '@mui/icons-material/ArrowForwardRounded';
+import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
+import VisibilityRoundedIcon from '@mui/icons-material/VisibilityRounded';
 import { useLanguage } from '../i18n/LanguageContext';
 import type { TranslationKey } from '../i18n/translations';
 
@@ -19,16 +21,45 @@ const steps: { key: TranslationKey; Icon: typeof TableRowsRoundedIcon }[] = [
   { key: 'stepShred', Icon: DeleteForeverRoundedIcon },
 ];
 
+const HIDDEN_KEY = 'de-pseudo-hide-intro';
+
+function readHidden(): boolean {
+  try { return localStorage.getItem(HIDDEN_KEY) === '1'; } catch { return false; }
+}
+
 export function HowItWorks() {
   const { t } = useLanguage();
+  const [hidden, setHidden] = useState(readHidden);
+
+  function hide() {
+    setHidden(true);
+    try { localStorage.setItem(HIDDEN_KEY, '1'); } catch { /* ignore persistence failure */ }
+  }
+  function show() {
+    setHidden(false);
+    try { localStorage.removeItem(HIDDEN_KEY); } catch { /* ignore persistence failure */ }
+  }
+
+  if (hidden) return (
+    <Button variant="outlined" size="small" startIcon={<VisibilityRoundedIcon />} onClick={show} sx={{ alignSelf: 'flex-start' }}>
+      {t('showIntro')}
+    </Button>
+  );
+
   return (
     <Paper
       variant="outlined"
       sx={{
+        position: 'relative',
         p: { xs: 3, sm: 5, md: 7 },
         background: 'linear-gradient(135deg, rgba(193,84,12,0.06), rgba(192,138,46,0.06))',
       }}
     >
+      <Tooltip title={t('hideIntro')}>
+        <IconButton onClick={hide} aria-label={t('hideIntro')} size="small" sx={{ position: 'absolute', top: 12, right: 12 }}>
+          <CloseRoundedIcon fontSize="small" />
+        </IconButton>
+      </Tooltip>
       <Stack spacing={{ xs: 5, md: 7 }}>
         <Box textAlign="center">
           <Typography variant="h5">{t('howItWorksTitle')}</Typography>
