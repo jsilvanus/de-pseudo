@@ -308,6 +308,32 @@ test.describe('de-pseudo browser workflow', () => {
     await page.goto('/');
     await expect(page.getByText(`v${appVersion}`, { exact: true })).toBeVisible();
   });
+
+  test('hides the "How it works" intro on request and remembers that across a reload', async ({ page }) => {
+    await page.goto('/');
+    await expect(page.getByRole('heading', { name: 'How it works' })).toBeVisible();
+
+    await page.getByLabel('Hide').click();
+    await expect(page.getByRole('heading', { name: 'How it works' })).toHaveCount(0);
+    const showButton = page.getByRole('button', { name: 'Show how it works' });
+    await expect(showButton).toBeVisible();
+
+    await page.reload();
+    await expect(page.getByRole('heading', { name: 'How it works' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Show how it works' })).toBeVisible();
+
+    await page.getByRole('button', { name: 'Show how it works' }).click();
+    await expect(page.getByRole('heading', { name: 'How it works' })).toBeVisible();
+  });
+
+  test('shows a validation error right next to the Paste AI result button, not just at the top', async ({ page }) => {
+    await createSession(page);
+    const pasteSection = page.getByRole('heading', { name: 'Paste AI result' }).locator('..');
+    await pasteSection.getByRole('textbox').fill('not a valid response at all');
+    await page.getByRole('button', { name: /Validate & resolve locally/i }).click();
+    await expect(pasteSection.getByRole('alert')).toBeVisible();
+    await expect(pasteSection.getByRole('alert')).toContainText(/session ID/i);
+  });
 });
 
 test.describe('multiple tables', () => {

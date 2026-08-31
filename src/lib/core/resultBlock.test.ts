@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { parseSessionResponse } from './result';
+import { responseInstructions } from './prompt';
 
 const sessionId = '0123456789abcdef0123456789abcdef';
 
@@ -69,5 +70,25 @@ describe('the "--- RESULT ---" wrapper', () => {
     ].join('\n');
     const result = parseSessionResponse(response, 'tsv', sessionId);
     expect(result).toEqual([{ pseudonym: 'def456abc123', choice: 'pizza' }]);
+  });
+});
+
+describe('allowing explanation must not reopen the door to markdown-formatted data', () => {
+  // Regression coverage: the "you may add explanation" note was added without
+  // re-stating that the data itself still can't be a markdown table or code
+  // block — that combination is exactly what let an AI's reply come back
+  // with its row breaks lost (e.g. a rendered markdown table copied without
+  // its newlines).
+  it.each(['tsv', 'csv', 'psv'] as const)('tells the AI not to format the %s data as markdown, alongside the explanation note', (format) => {
+    const instructions = responseInstructions(format, sessionId, ['pseudonym', 'choice']);
+    expect(instructions).toMatch(/not.*markdown table.*code block/i);
+    expect(instructions).toContain('one row per line');
+    expect(instructions).toContain('--- RESULT ---');
+  });
+
+  it('tells the AI not to wrap the json reply in a markdown code block, alongside the explanation note', () => {
+    const instructions = responseInstructions('json', sessionId, ['pseudonym', 'choice']);
+    expect(instructions).toMatch(/not.*markdown code block/i);
+    expect(instructions).toContain('--- RESULT ---');
   });
 });

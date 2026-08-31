@@ -54,6 +54,10 @@ export default function App() {
   const [resolvedMappings, setResolvedMappings] = useState<{ pseudonym: string; identity: string }[]>([]);
   const [finalFormat, setFinalFormat] = useState<FinalFormat>('json');
   const [error, setError] = useState('');
+  // Kept separate from the top-of-page `error` banner so a failed
+  // validate-and-resolve shows its error right next to the button that
+  // triggered it, instead of requiring a scroll back up to see it.
+  const [resolveError, setResolveError] = useState('');
   const [restored, setRestored] = useState(false);
   const [copied, setCopied] = useState<'prompt' | 'result' | null>(null);
   const [loading, setLoading] = useState(false);
@@ -218,7 +222,7 @@ export default function App() {
 
   async function handlePseudonymizeAll() {
     try {
-      setError(''); setResolvedProjected(null);
+      setError(''); setResolvedProjected(null); setResolveError('');
       if (!tables.length) throw new Error(t('errLoadAtLeastOne'));
       const { tables: baseTables, mapping } = pseudonymizeTables(tables.map(t => ({ name: t.name, records: t.rawRecords, identityColumn: t.identityColumn })));
       const schemaInputs: SchemaTableInput[] = tables.map((t, i) => {
@@ -256,10 +260,10 @@ export default function App() {
         const idCol = t.schema.columns.find(c => c.mode === 'pseudonymize')?.name;
         return t.rows.map(r => ({ pseudonym: r.pseudonym, identity: String(dataset.mapping[r.pseudonym]?.[idCol ?? ''] ?? r.pseudonym) }));
       });
-      setError('');
+      setResolveError('');
       setResolvedProjected(projected);
       setResolvedMappings(mappings);
-    } catch (e) { setError(e instanceof Error ? e.message : t('errValidate')); setResolvedProjected(null); }
+    } catch (e) { setResolveError(e instanceof Error ? e.message : t('errValidate')); setResolvedProjected(null); }
   }
 
   async function handleShred() {
@@ -267,7 +271,7 @@ export default function App() {
     setDataset(null);
     setTables([]); setDraftName(t('tableDefaultName', { n: 1 })); setDraftNameEdited(false); setDraftRecords([]); setDraftIdentityColumn(''); setDraftPasteText(''); setDraftLoadedFrom(''); setIdTextRows([{ id: '', text: '' }]);
     setAliases({}); setCellReferences([]);
-    setAiResult(''); setResolvedProjected(null); setResolvedMappings([]);
+    setAiResult(''); setResolvedProjected(null); setResolvedMappings([]); setResolveError('');
     setRestored(false); setCopied(null);
     setError(t('sessionShredded'));
     setPromptDraft(''); setFormat('tsv');
@@ -404,7 +408,7 @@ export default function App() {
         {referenceError ? <Alert severity="error">{t('promptBlocked')}</Alert> : <><TextField multiline minRows={8} value={prompt} InputProps={{ readOnly: true }} fullWidth /><Button variant="outlined" onClick={() => copy(prompt, 'prompt')}>{copied === 'prompt' ? t('copied') : t('copyPrompt')}</Button></>}
       </Stack></Paper>
 
-      <Paper sx={{ p: 3 }}><Stack spacing={2}><Typography variant="h5">{t('pasteAiResultTitle')}</Typography><TextField multiline minRows={7} value={aiResult} onChange={e => setAiResult(e.target.value)} fullWidth /><Button variant="contained" onClick={handleResolve}>{t('validateAndResolve')}</Button></Stack></Paper>
+      <Paper sx={{ p: 3 }}><Stack spacing={2}><Typography variant="h5">{t('pasteAiResultTitle')}</Typography><TextField multiline minRows={7} value={aiResult} onChange={e => setAiResult(e.target.value)} fullWidth /><Button variant="contained" onClick={handleResolve}>{t('validateAndResolve')}</Button>{resolveError && <Alert severity="error">{resolveError}</Alert>}</Stack></Paper>
       {resolvedProjected && <Paper sx={{ p: 3 }}><Stack spacing={2}>
         <Typography variant="h5">{t('finalOutputTitle')}</Typography>
         <Stack direction="row" spacing={1} alignItems="center"><Typography variant="body2" color="text.secondary">{t('finalOutputFormatLabel')}</Typography><ToggleButtonGroup size="small" exclusive value={finalFormat} onChange={(_, v: FinalFormat | null) => v && setFinalFormat(v)}><ToggleButton value="json">{t('formatJson')}</ToggleButton><ToggleButton value="tsv">{t('formatTsvShort')}</ToggleButton><ToggleButton value="csv">{t('formatCsvShort')}</ToggleButton><ToggleButton value="psv">{t('formatPsvShort')}</ToggleButton></ToggleButtonGroup></Stack>

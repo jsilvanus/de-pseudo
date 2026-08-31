@@ -54,4 +54,14 @@ describe('csv response format', () => {
   it('rejects a csv response without the session ID', () => {
     expect(() => parseSessionResponse('pseudonym,choice\nabc,pizza', 'csv', sessionId)).toThrow();
   });
+
+  it('rejects with a clear, specific error when rows are missing their line breaks', () => {
+    // A chat UI can drop the newlines between a rendered table's rows on
+    // copy, or the AI can glue everything onto one line — either way, the
+    // header line ends up containing every row's values too. This must fail
+    // with a message pointing at the actual problem, not a generic "missing
+    // pseudonym(s)" validation error further downstream.
+    const response = `SESSION ID: ${sessionId}\npseudonym,choice,abc123def456,pizza,def456abc123,burger`;
+    expect(() => parseSessionResponse(response, 'csv', sessionId)).toThrow(/each row is on its own line/i);
+  });
 });

@@ -17,6 +17,8 @@ export const translations = {
 
     howItWorksTitle: 'How it works',
     howItWorksSubtitle: "Your data never leaves this tab looking like itself.",
+    hideIntro: 'Hide',
+    showIntro: 'Show how it works',
     stepData: 'Your data',
     stepPseudonymize: 'Pseudonymize',
     stepPrompt: 'Build prompt',
@@ -136,6 +138,8 @@ export const translations = {
 
     howItWorksTitle: 'Näin se toimii',
     howItWorksSubtitle: 'Tietosi eivät koskaan poistu tästä välilehdestä sellaisenaan.',
+    hideIntro: 'Piilota',
+    showIntro: 'Näytä, miten se toimii',
     stepData: 'Tietosi',
     stepPseudonymize: 'Pseudonymisointi',
     stepPrompt: 'Kehotteen rakennus',
@@ -255,6 +259,8 @@ export const translations = {
 
     howItWorksTitle: 'Så här fungerar det',
     howItWorksSubtitle: 'Din data lämnar aldrig den här fliken i sitt ursprungliga skick.',
+    hideIntro: 'Dölj',
+    showIntro: 'Visa hur det fungerar',
     stepData: 'Din data',
     stepPseudonymize: 'Pseudonymisera',
     stepPrompt: 'Bygg prompt',

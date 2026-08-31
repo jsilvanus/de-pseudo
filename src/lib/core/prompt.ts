@@ -24,6 +24,13 @@ const COMMON_IDENTITY_COLUMNS = new Set([
 // content can skip the wrapper — the parser accepts both.
 const RESULT_BLOCK_NOTE = 'You may add other explanation or information elsewhere in your reply. If you do, put the required data below inside a block starting with a line that says exactly "--- RESULT ---" and ending with a line that says exactly "--- END RESULT ---" — only what is inside that block will be read as data. If your reply contains nothing else, you may omit the block and return just the data below.';
 
+// Freeform explanation elsewhere in the reply is fine, but the data itself
+// must stay parseable: a chat UI can silently drop the newlines between rows
+// of a rendered markdown table on copy, and a markdown table wouldn't use the
+// requested delimiter in the first place. Plain text, one row per line.
+const PLAIN_ROWS_NOTE = 'Do not format the data as a markdown table or inside a code block — plain text only, with exactly one row per line.';
+const PLAIN_JSON_NOTE = 'Do not wrap the JSON in a markdown code block — plain text only.';
+
 export function responseInstructions(format: ResponseFormat = 'tsv', sessionId = '<session-id>', outputFields: string[] = ['pseudonym', 'choice']): string {
   const fields = outputFields.join(', ');
   if (format === 'json') return [
@@ -32,6 +39,7 @@ export function responseInstructions(format: ResponseFormat = 'tsv', sessionId =
     `Set sessionId exactly to: ${sessionId}`, `Return only these fields: ${fields}.`,
     'Use every pseudonym exactly as provided. Return one object per pseudonym.',
     'Do not invent, modify, or omit pseudonyms. Do not include real names or identifying information.',
+    PLAIN_JSON_NOTE,
     RESULT_BLOCK_NOTE,
   ].join('\n');
   if (format === 'tsv') return [
@@ -42,6 +50,7 @@ export function responseInstructions(format: ResponseFormat = 'tsv', sessionId =
     'Leave one blank line after the header row, before the data rows.',
     'The pseudonym column must be present and must contain every pseudonym exactly once.',
     'Do not invent, modify, or omit pseudonyms. Do not include real names or identifying information.',
+    PLAIN_ROWS_NOTE,
     RESULT_BLOCK_NOTE,
   ].join('\n');
   if (format === 'csv') return [
@@ -53,6 +62,7 @@ export function responseInstructions(format: ResponseFormat = 'tsv', sessionId =
     'The pseudonym column must be present and must contain every pseudonym exactly once.',
     'Quote a field in double quotes if it contains a comma, a quote, or a line break.',
     'Do not invent, modify, or omit pseudonyms. Do not include real names or identifying information.',
+    PLAIN_ROWS_NOTE,
     RESULT_BLOCK_NOTE,
   ].join('\n');
   if (format === 'psv') return [
@@ -63,6 +73,7 @@ export function responseInstructions(format: ResponseFormat = 'tsv', sessionId =
     'Leave one blank line after the header row, before the data rows.',
     'The pseudonym column must be present and must contain every pseudonym exactly once.',
     'Do not invent, modify, or omit pseudonyms. Do not include real names or identifying information.',
+    PLAIN_ROWS_NOTE,
     RESULT_BLOCK_NOTE,
   ].join('\n');
   return [
@@ -70,7 +81,8 @@ export function responseInstructions(format: ResponseFormat = 'tsv', sessionId =
     `Then return exactly one line for each pseudonym: <pseudonym> -> <choice>`,
     `Return only these output fields: ${fields}.`,
     'Use each pseudonym exactly as provided. Do not invent, modify, or omit pseudonyms.',
-    'Do not include real names or identifying information. Do not use a markdown table.',
+    'Do not include real names or identifying information.',
+    PLAIN_ROWS_NOTE,
     RESULT_BLOCK_NOTE,
   ].join('\n');
 }
