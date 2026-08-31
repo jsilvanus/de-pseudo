@@ -110,4 +110,4 @@ Recognized sites: ChatGPT (`chatgpt.com`, `chat.openai.com`), Claude (`claude.ai
 
 ## Suggested next step
 
-Load `dist-extension/` unpacked in Chrome and Edge. Confirm the side-panel UX feels right, then specifically try the two new chat-bridge buttons against a real ChatGPT/Claude/Copilot/Gemini tab — that's the one part of this that couldn't be verified from here. Report back what does/doesn't work so the DOM heuristics (or the site list) can be adjusted before investing in store listings.
+Load `dist-extension/` unpacked in Chrome and Edge. Confirm the side-panel UX feels right, then specifically try the two new chat-bridge buttons against a real ChatGPT/Claude/Copilot/Gemini tab — that's the one part of this that couldn't be verified from here. Report back what does/doesn't work so the DOM heuristics (or the site list) can be adjusted before investing in store listings. When that's ready, see [PUBLISHING.md](./PUBLISHING.md) for the actual submission checklist and links.

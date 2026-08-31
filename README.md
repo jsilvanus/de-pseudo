@@ -30,7 +30,7 @@ Pseudonymization is not anonymization — attribute combinations can still ident
 
 ## Browser extension
 
-de-pseudo is also available as a Chrome/Edge side panel extension — the same app, opened from the toolbar instead of a tab, so it can sit open alongside an AI chat tab. It reuses the web app's code unchanged, and adds two optional buttons that fill a recognized AI chat tab's message box with the generated prompt and pull its latest reply back in (ChatGPT, Claude, Copilot, Gemini) — never auto-submitting, so you still review what's sent. See [BROWSER-EXTENSION-PLAN.md](./BROWSER-EXTENSION-PLAN.md) for the design and known limitations.
+de-pseudo is also available as a Chrome/Edge side panel extension — the same app, opened from the toolbar instead of a tab, so it can sit open alongside an AI chat tab. It reuses the web app's code unchanged, and adds two optional buttons that fill a recognized AI chat tab's message box with the generated prompt and pull its latest reply back in (ChatGPT, Claude, Copilot, Gemini) — never auto-submitting, so you still review what's sent. See [BROWSER-EXTENSION-PLAN.md](./BROWSER-EXTENSION-PLAN.md) for the design and known limitations, and [PUBLISHING.md](./PUBLISHING.md) for the Chrome Web Store / Edge Add-ons submission checklist.
 
 ```bash
 npm run build:extension   # builds dist-extension/
