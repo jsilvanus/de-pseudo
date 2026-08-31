@@ -91,7 +91,7 @@ function psvCell(value: unknown): string {
   return String(value).replace(/\r?\n/g, ' ').replace(/\|/g, ' ');
 }
 
-function delimiterFor(format: ResponseFormat): ',' | '\t' | '|' {
+export function delimiterFor(format: ResponseFormat): ',' | '\t' | '|' {
   if (format === 'csv') return ',';
   if (format === 'psv') return '|';
   return '\t';

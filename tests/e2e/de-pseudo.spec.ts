@@ -112,6 +112,40 @@ test.describe('de-pseudo browser workflow', () => {
     await expect(page.getByRole('button', { name: /^Copy$/i })).toBeVisible();
   });
 
+  test('renders the final output in JSON by default and switches to TSV/CSV/PSV without re-validating', async ({ page }) => {
+    await createSession(page);
+    const promptSection = page.getByRole('heading', { name: 'Generated AI prompt' }).locator('..');
+    const prompt = await promptSection.locator('textarea').first().inputValue();
+    const sessionId = prompt.match(/SESSION ID:\s*([0-9a-f]{32})/)?.[1];
+    const pseudonyms = [...prompt.matchAll(/^([0-9a-f]{12})\t/gm)].map((m) => m[1]);
+    const response = [`SESSION ID:\t${sessionId}`, 'pseudonym\tchoice', ...pseudonyms.map((p) => `${p}\tpizza`)].join('\n');
+
+    await page.getByRole('heading', { name: 'Paste AI result' }).locator('..').getByRole('textbox').fill(response);
+    await page.getByRole('button', { name: /Validate & resolve locally/i }).click();
+
+    const finalSection = page.getByRole('heading', { name: 'Final output' }).locator('..');
+    const finalText = finalSection.locator('textarea').first();
+    await expect(finalSection.getByRole('button', { name: 'JSON', exact: true })).toHaveAttribute('aria-pressed', 'true');
+    const jsonValue = await finalText.inputValue();
+    expect(() => JSON.parse(jsonValue)).not.toThrow();
+    expect(jsonValue).toContain('John Johnson');
+
+    // Switching format re-renders the already-resolved data — no need to
+    // paste or validate the AI reply again.
+    await finalSection.getByRole('button', { name: 'TSV', exact: true }).click();
+    const tsvValue = await finalText.inputValue();
+    expect(tsvValue).toContain('John Johnson');
+    expect(tsvValue).not.toContain('{');
+
+    await finalSection.getByRole('button', { name: 'CSV', exact: true }).click();
+    expect(await finalText.inputValue()).toContain('John Johnson');
+
+    await finalSection.getByRole('button', { name: 'PSV', exact: true }).click();
+    const psvValue = await finalText.inputValue();
+    expect(psvValue).toContain('John Johnson');
+    expect(psvValue).not.toContain('{');
+  });
+
   test('round-trips using the csv AI reply format', async ({ page }) => {
     await createSession(page);
     const promptSection = page.getByRole('heading', { name: 'Generated AI prompt' }).locator('..');
