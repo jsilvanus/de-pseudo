@@ -24,4 +24,45 @@ test.describe('de-pseudo side panel extension', () => {
     await expect(generated).toHaveValue(/SESSION ID:/);
     await expect(generated).not.toHaveValue(/John Johnson/);
   });
+
+  // The extension-only "send to chat" / "capture reply" buttons only render
+  // inside the extension build (isExtensionRuntime() gates them off in the
+  // plain web app). The real permission dialog they trigger on first use is
+  // native browser chrome, not page content — Playwright cannot see or
+  // click it, and chrome.permissions.request() hangs forever waiting for a
+  // response that can never come headlessly. So this stubs it to resolve as
+  // "declined" (the same outcome a real user gets by dismissing the
+  // dialog), which is enough to prove the plumbing up to that point works
+  // and the app degrades gracefully rather than hanging. It cannot exercise
+  // the actual per-site DOM extraction, which needs a real, logged-in
+  // ChatGPT/Claude/Copilot/Gemini tab.
+  test('shows the chat-bridge buttons and handles a declined permission gracefully', async ({ context, extensionId }) => {
+    const page = await context.newPage();
+    await page.addInitScript(() => {
+      localStorage.setItem('de-pseudo-language', 'en');
+      // Simulates the user dismissing the native permission dialog, which
+      // Playwright cannot see or click (it's browser chrome, not page
+      // content) and which otherwise hangs forever headlessly.
+      chrome.permissions.contains = (() => Promise.resolve(false)) as typeof chrome.permissions.contains;
+      chrome.permissions.request = (() => Promise.resolve(false)) as typeof chrome.permissions.request;
+    });
+    await page.goto(`chrome-extension://${extensionId}/sidepanel.html`);
+
+    await page.getByLabel('Table name').fill('Table 1');
+    await page.getByLabel('Paste data').fill(['username\tpreference', 'John Johnson\ticecream'].join('\n'));
+    await page.getByRole('button', { name: 'Add this table' }).click();
+    await page.getByRole('button', { name: /Pseudonymize all & continue/i }).click();
+
+    const sendButton = page.getByRole('button', { name: 'Send to AI chat tab' });
+    await expect(sendButton).toBeVisible();
+    await sendButton.click();
+    await expect(page.getByText('Could not access the AI chat tab.')).toBeVisible();
+    await expect(sendButton).toBeEnabled();
+
+    const captureButton = page.getByRole('button', { name: 'Capture reply from AI chat tab' });
+    await expect(captureButton).toBeVisible();
+    await captureButton.click();
+    await expect(page.getByText('Could not access the AI chat tab.').last()).toBeVisible();
+    await expect(captureButton).toBeEnabled();
+  });
 });

@@ -3,6 +3,7 @@ import { Alert, Box, Button, Checkbox, Chip, Container, FormControl, FormControl
 import AddRoundedIcon from '@mui/icons-material/AddRounded';
 import { pseudonymizeTables, applySchemas, buildMultiTablePrompt, parseSessionResponse, validateResults, projectOutput, defaultSchema, findReferenceCandidates, findInitialMatches, pseudonymizedTable, delimiterFor, type DatasetSchema, type ResponseFormat, type MultiTableDataset, type NamedPseudonymizedTable, type SchemaTableInput } from './lib/core';
 import { loadFile, loadClipboardText, type DelimitedFormat } from './lib/input/loadDataset';
+import { isExtensionRuntime, sendPromptToActiveChatTab, captureReplyFromActiveChatTab, type ChatBridgeError } from './lib/extension/aiChatBridge';
 import { SessionVault } from './domain/shred/sessionVault';
 import { resolveText } from './domain/result/resolve';
 import { ReferenceEditor, type CellReference } from './components/ReferenceEditor';
@@ -61,6 +62,8 @@ export default function App() {
   const [restored, setRestored] = useState(false);
   const [copied, setCopied] = useState<'prompt' | 'result' | null>(null);
   const [loading, setLoading] = useState(false);
+  const [chatBridgeBusy, setChatBridgeBusy] = useState<'send' | 'capture' | null>(null);
+  const [chatBridgeStatus, setChatBridgeStatus] = useState<{ kind: 'send' | 'capture'; ok: boolean; message: string } | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const newOutputFieldInputs = useRef<Record<number, HTMLInputElement | null>>({});
 
@@ -173,6 +176,29 @@ export default function App() {
 
   async function copy(text: string, kind: 'prompt' | 'result') { await navigator.clipboard.writeText(text); setCopied(kind); window.setTimeout(() => setCopied(c => c === kind ? null : c), 1800); }
 
+  function chatBridgeErrorMessage(error: ChatBridgeError): string {
+    if (error.key === 'chatBridgeUnsupportedSite') return t('chatBridgeUnsupportedSite', error.vars);
+    if (error.key === 'chatBridgeNoInputFound') return t('chatBridgeNoInputFound', error.vars);
+    return t(error.key);
+  }
+  async function handleSendToChat() {
+    setChatBridgeBusy('send'); setChatBridgeStatus(null);
+    const result = await sendPromptToActiveChatTab(prompt);
+    setChatBridgeBusy(null);
+    setChatBridgeStatus(result.ok
+      ? { kind: 'send', ok: true, message: t('chatBridgeSentOk', { site: result.site }) }
+      : { kind: 'send', ok: false, message: chatBridgeErrorMessage(result.error) });
+  }
+  async function handleCaptureReply() {
+    setChatBridgeBusy('capture'); setChatBridgeStatus(null);
+    const result = await captureReplyFromActiveChatTab();
+    setChatBridgeBusy(null);
+    if (result.ok) setAiResult(result.text);
+    setChatBridgeStatus(result.ok
+      ? { kind: 'capture', ok: true, message: t('chatBridgeCapturedOk', { site: result.site }) }
+      : { kind: 'capture', ok: false, message: chatBridgeErrorMessage(result.error) });
+  }
+
   async function draftLoadRecords(records: RawRecord[], source: string) {
     if (!records.length) throw new Error(t('errNoRows'));
     setDraftRecords(records);
@@ -273,6 +299,7 @@ export default function App() {
     setAliases({}); setCellReferences([]);
     setAiResult(''); setResolvedProjected(null); setResolvedMappings([]); setResolveError('');
     setRestored(false); setCopied(null);
+    setChatBridgeStatus(null); setChatBridgeBusy(null);
     setError(t('sessionShredded'));
     setPromptDraft(''); setFormat('tsv');
   }
@@ -405,10 +432,16 @@ export default function App() {
       <Paper sx={{ p: 3 }}><Stack spacing={2}>
         <Typography variant="h5">{t('generatedPromptTitle')}</Typography>
         <Stack direction="row" spacing={1} alignItems="center"><Typography variant="body2" color="text.secondary">{t('aiReplyFormatLabel')}</Typography><ToggleButtonGroup size="small" exclusive value={format} onChange={(_, v: ResponseFormat | null) => v && setFormat(v)}><ToggleButton value="tsv">{t('formatTsvShort')}</ToggleButton><ToggleButton value="csv">{t('formatCsvShort')}</ToggleButton><ToggleButton value="psv">{t('formatPsvShort')}</ToggleButton><ToggleButton value="json">{t('formatJson')}</ToggleButton></ToggleButtonGroup></Stack>
-        {referenceError ? <Alert severity="error">{t('promptBlocked')}</Alert> : <><TextField multiline minRows={8} value={prompt} InputProps={{ readOnly: true }} fullWidth /><Button variant="outlined" onClick={() => copy(prompt, 'prompt')}>{copied === 'prompt' ? t('copied') : t('copyPrompt')}</Button></>}
+        {referenceError ? <Alert severity="error">{t('promptBlocked')}</Alert> : <><TextField multiline minRows={8} value={prompt} InputProps={{ readOnly: true }} fullWidth /><Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+          <Button variant="outlined" onClick={() => copy(prompt, 'prompt')}>{copied === 'prompt' ? t('copied') : t('copyPrompt')}</Button>
+          {isExtensionRuntime() && <Button variant="outlined" onClick={handleSendToChat} disabled={chatBridgeBusy === 'send'}>{t('sendToChatTab')}</Button>}
+        </Stack>{chatBridgeStatus?.kind === 'send' && <Alert severity={chatBridgeStatus.ok ? 'success' : 'error'}>{chatBridgeStatus.message}</Alert>}</>}
       </Stack></Paper>
 
-      <Paper sx={{ p: 3 }}><Stack spacing={2}><Typography variant="h5">{t('pasteAiResultTitle')}</Typography><TextField multiline minRows={7} value={aiResult} onChange={e => setAiResult(e.target.value)} fullWidth /><Button variant="contained" onClick={handleResolve}>{t('validateAndResolve')}</Button>{resolveError && <Alert severity="error">{resolveError}</Alert>}</Stack></Paper>
+      <Paper sx={{ p: 3 }}><Stack spacing={2}><Typography variant="h5">{t('pasteAiResultTitle')}</Typography>
+        {isExtensionRuntime() && <Button variant="outlined" onClick={handleCaptureReply} disabled={chatBridgeBusy === 'capture'} sx={{ alignSelf: 'flex-start' }}>{t('captureReplyFromChatTab')}</Button>}
+        {chatBridgeStatus?.kind === 'capture' && <Alert severity={chatBridgeStatus.ok ? 'success' : 'error'}>{chatBridgeStatus.message}</Alert>}
+        <TextField multiline minRows={7} value={aiResult} onChange={e => setAiResult(e.target.value)} fullWidth /><Button variant="contained" onClick={handleResolve}>{t('validateAndResolve')}</Button>{resolveError && <Alert severity="error">{resolveError}</Alert>}</Stack></Paper>
       {resolvedProjected && <Paper sx={{ p: 3 }}><Stack spacing={2}>
         <Typography variant="h5">{t('finalOutputTitle')}</Typography>
         <Stack direction="row" spacing={1} alignItems="center"><Typography variant="body2" color="text.secondary">{t('finalOutputFormatLabel')}</Typography><ToggleButtonGroup size="small" exclusive value={finalFormat} onChange={(_, v: FinalFormat | null) => v && setFinalFormat(v)}><ToggleButton value="json">{t('formatJson')}</ToggleButton><ToggleButton value="tsv">{t('formatTsvShort')}</ToggleButton><ToggleButton value="csv">{t('formatCsvShort')}</ToggleButton><ToggleButton value="psv">{t('formatPsvShort')}</ToggleButton></ToggleButtonGroup></Stack>

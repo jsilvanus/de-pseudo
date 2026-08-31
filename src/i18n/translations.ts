@@ -112,9 +112,19 @@ export const translations = {
     promptBlocked: 'Prompt generation is blocked until the unresolved references above are fixed.',
     copyPrompt: 'Copy prompt',
     copied: 'Copied',
+    sendToChatTab: 'Send to AI chat tab',
 
     pasteAiResultTitle: 'Paste AI result',
     validateAndResolve: 'Validate & resolve locally',
+    captureReplyFromChatTab: 'Capture reply from AI chat tab',
+
+    chatBridgeSentOk: 'Sent to {{site}} — review it there, then press send yourself.',
+    chatBridgeCapturedOk: 'Captured the latest reply from {{site}}.',
+    chatBridgeUnsupportedSite: "The active tab ({{hostname}}) isn't a supported AI chat page yet. Open ChatGPT, Claude, Copilot, or Gemini, switch to that tab, then try again.",
+    chatBridgeNoInputFound: "Could not find {{site}}'s message box on the page. Copy the prompt instead.",
+    chatBridgeNoReplyFound: 'Could not find a reply on the page. Copy it manually instead.',
+    chatBridgeTabUnreadable: 'Could not read the active tab. Click the button again, or switch to the AI chat tab first.',
+    chatBridgeAccessError: 'Could not access the AI chat tab.',
 
     finalOutputTitle: 'Final output',
     finalOutputFormatLabel: 'Output format:',
@@ -233,9 +243,19 @@ export const translations = {
     promptBlocked: 'Kehotteen luonti on estetty, kunnes yllä olevat ratkaisemattomat viittaukset on korjattu.',
     copyPrompt: 'Kopioi kehote',
     copied: 'Kopioitu',
+    sendToChatTab: 'Lähetä tekoälyn keskusteluvälilehdelle',
 
     pasteAiResultTitle: 'Liitä tekoälyn tulos',
     validateAndResolve: 'Vahvista ja ratkaise paikallisesti',
+    captureReplyFromChatTab: 'Nouda vastaus tekoälyn keskustelusta',
+
+    chatBridgeSentOk: 'Lähetetty kohteeseen {{site}} — tarkista se siellä ja paina lähetystä itse.',
+    chatBridgeCapturedOk: 'Uusin vastaus noudettu kohteesta {{site}}.',
+    chatBridgeUnsupportedSite: 'Aktiivinen välilehti ({{hostname}}) ei ole vielä tuettu tekoälykeskustelusivu. Avaa ChatGPT, Claude, Copilot tai Gemini toiseen välilehteen, vaihda sille ja yritä uudelleen.',
+    chatBridgeNoInputFound: 'Kohteen {{site}} viestikenttää ei löytynyt sivulta. Kopioi kehote sen sijaan.',
+    chatBridgeNoReplyFound: 'Vastausta ei löytynyt sivulta. Kopioi se käsin.',
+    chatBridgeTabUnreadable: 'Aktiivista välilehteä ei voitu lukea. Paina painiketta uudelleen tai vaihda ensin tekoälyn välilehdelle.',
+    chatBridgeAccessError: 'Tekoälyn välilehteä ei voitu käyttää.',
 
     finalOutputTitle: 'Lopullinen tulos',
     finalOutputFormatLabel: 'Tulostemuoto:',
@@ -354,9 +374,19 @@ export const translations = {
     promptBlocked: 'Promptgenerering är blockerad tills de olösta referenserna ovan är åtgärdade.',
     copyPrompt: 'Kopiera prompt',
     copied: 'Kopierad',
+    sendToChatTab: 'Skicka till AI-chattflik',
 
     pasteAiResultTitle: 'Klistra in AI-resultat',
     validateAndResolve: 'Validera och lös lokalt',
+    captureReplyFromChatTab: 'Hämta svar från AI-chatt',
+
+    chatBridgeSentOk: 'Skickat till {{site}} — granska det där och tryck sedan själv på skicka.',
+    chatBridgeCapturedOk: 'Hämtade det senaste svaret från {{site}}.',
+    chatBridgeUnsupportedSite: 'Den aktiva fliken ({{hostname}}) är inte en AI-chattsida som stöds ännu. Öppna ChatGPT, Claude, Copilot eller Gemini i en annan flik, växla till den och försök igen.',
+    chatBridgeNoInputFound: 'Kunde inte hitta {{site}}s meddelanderuta på sidan. Kopiera prompten istället.',
+    chatBridgeNoReplyFound: 'Kunde inte hitta något svar på sidan. Kopiera det manuellt istället.',
+    chatBridgeTabUnreadable: 'Kunde inte läsa den aktiva fliken. Tryck på knappen igen, eller växla till AI-chattfliken först.',
+    chatBridgeAccessError: 'Kunde inte komma åt AI-chattfliken.',
 
     finalOutputTitle: 'Slutresultat',
     finalOutputFormatLabel: 'Utdataformat:',
