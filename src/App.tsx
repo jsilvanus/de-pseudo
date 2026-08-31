@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Box, Button, Checkbox, Container, FormControl, FormControlLabel, InputLabel, Link, MenuItem, Paper, Select, Stack, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, TextField, ToggleButton, ToggleButtonGroup, Typography } from '@mui/material';
+import { Alert, Box, Button, Checkbox, Chip, Container, FormControl, FormControlLabel, InputLabel, Link, MenuItem, Paper, Select, Stack, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, TextField, ToggleButton, ToggleButtonGroup, Typography } from '@mui/material';
 import AddRoundedIcon from '@mui/icons-material/AddRounded';
 import { pseudonymizeTables, applySchemas, buildMultiTablePrompt, parseSessionResponse, validateResults, projectOutput, defaultSchema, findReferenceCandidates, findInitialMatches, type DatasetSchema, type ResponseFormat, type MultiTableDataset, type NamedPseudonymizedTable, type SchemaTableInput } from './lib/core';
 import { loadFile, loadClipboardText, type DelimitedFormat } from './lib/input/loadDataset';
@@ -258,7 +258,10 @@ export default function App() {
 
   return <Container maxWidth="lg" sx={{ py: 4 }}><Stack spacing={3}>
     <Stack direction="row" justifyContent="space-between" alignItems="flex-start" flexWrap="wrap" gap={2}>
-      <Box><Typography variant="h3">🎭 de-pseudo</Typography><Typography color="text.secondary">{t('appTagline')}</Typography></Box>
+      <Box><Stack direction="row" spacing={1.5} alignItems="center" flexWrap="wrap">
+        <Typography variant="h3">🎭 de-pseudo</Typography>
+        <Chip label={`v${__APP_VERSION__}`} size="small" variant="outlined" sx={{ fontWeight: 600 }} />
+      </Stack><Typography color="text.secondary">{t('appTagline')}</Typography></Box>
       <LanguageSwitcher />
     </Stack>
     <HowItWorks />

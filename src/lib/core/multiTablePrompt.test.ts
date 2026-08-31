@@ -47,8 +47,41 @@ describe('buildMultiTablePrompt', () => {
       sessionId,
     );
     // Rooms has no output fields configured, so the reply contract is driven
-    // by Preferences alone, not a mix of unrelated field names.
-    expect(prompt).toContain('Then return a tab-separated table with these columns: name, result.');
+    // by Preferences alone, not a mix of unrelated field names. The
+    // pseudonym-sourced "name" output field is asked for under the literal
+    // "pseudonym" column — that's the token the AI must echo back, not
+    // something it invents under the locally-resolved output's own label.
+    expect(prompt).toContain('Then return a tab-separated table with these columns: pseudonym, result.');
+  });
+
+  it('asks for the literal "pseudonym" column even when the identity output field has a custom name', () => {
+    // A user can rename the identity output field (e.g. to "Nimi") — the AI
+    // must still be told to echo the token under the literal "pseudonym"
+    // column; "Nimi" is filled in later, locally, by resolving that token.
+    const customSchema: DatasetSchema = {
+      columns: [{ name: 'Nimi', mode: 'pseudonymize' }, { name: 'hinta', mode: 'keep' }],
+      output: [{ name: 'Nimi', source: 'pseudonym' }, { name: 'Raha' }],
+    };
+    const prompt = buildMultiTablePrompt(
+      [{ name: 'Taulukko 1', rows: [{ pseudonym: 'aaa111222333', hinta: 'halpa' }], schema: customSchema }],
+      'Tee tilaus.',
+      'tsv',
+      sessionId,
+    );
+    expect(prompt).toContain('Then return a tab-separated table with these columns: pseudonym, Raha.');
+    expect(prompt).not.toContain('columns: Nimi');
+    expect(prompt).toContain('The pseudonym column must be present and must contain every pseudonym exactly once.');
+  });
+
+  it('tells the AI to leave a blank line after the session id and after the header row', () => {
+    const prompt = buildMultiTablePrompt(
+      [{ name: 'Rooms', rows: [{ pseudonym: 'aaa111222333', size: 4 }], schema: roomSchema }],
+      'Do something.',
+      'tsv',
+      sessionId,
+    );
+    expect(prompt).toContain('Leave one blank line after the SESSION ID line.');
+    expect(prompt).toContain('Leave one blank line after the header row, before the data rows.');
   });
 
   it('falls back to pseudonym/choice when no table has output fields configured', () => {
