@@ -1,4 +1,7 @@
 import { test, expect, type Page } from '@playwright/test';
+import pkg from '../../package.json' with { type: 'json' };
+
+const appVersion: string = pkg.version;
 
 // Finnish is the default language for real visitors, but these functional
 // tests assert on the original English copy — force English before every
@@ -237,6 +240,11 @@ test.describe('de-pseudo browser workflow', () => {
     await expect(sourceLink).toHaveAttribute('href', 'https://github.com/jsilvanus/de-pseudo');
     const licenseLink = page.getByRole('link', { name: /EUPL-1\.2/ });
     await expect(licenseLink).toHaveAttribute('href', 'https://github.com/jsilvanus/de-pseudo/blob/main/LICENSE');
+  });
+
+  test('shows the current app version next to the heading', async ({ page }) => {
+    await page.goto('/');
+    await expect(page.getByText(`v${appVersion}`, { exact: true })).toBeVisible();
   });
 });
 
