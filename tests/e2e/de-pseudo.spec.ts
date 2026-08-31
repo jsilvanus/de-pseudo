@@ -58,7 +58,10 @@ test.describe('de-pseudo browser workflow', () => {
     // column — that's the token the AI must echo back — not under the
     // source column's own display name ("username").
     expect(before).toContain('columns: pseudonym.');
-    expect(before).not.toMatch(/\bresult\b/i);
+    // The only remaining "result" mention comes from the new "--- RESULT ---"
+    // wrapper note, not the old phantom output column — check that
+    // specifically, rather than banning the word "result" outright.
+    expect(before).not.toMatch(/columns:[^.]*\bresult\b/i);
 
     const aiOutput = page.getByRole('heading', { name: 'AI output' }).locator('..');
     await aiOutput.getByRole('textbox', { name: 'AI-generated output field name' }).fill('chosen_meal');
@@ -153,6 +156,31 @@ test.describe('de-pseudo browser workflow', () => {
     const pseudonyms = [...prompt.matchAll(/^([0-9a-f]{12})\|/gm)].map((m) => m[1]);
     expect(pseudonyms.length).toBeGreaterThan(0);
     const response = [`SESSION ID: ${sessionId}`, 'pseudonym|choice', ...pseudonyms.map((p) => `${p}|pizza`)].join('\n');
+
+    await page.getByRole('heading', { name: 'Paste AI result' }).locator('..').getByRole('textbox').fill(response);
+    await page.getByRole('button', { name: /Validate & resolve locally/i }).click();
+    await expect(page.getByRole('heading', { name: 'Final output' })).toBeVisible();
+  });
+
+  test('accepts an AI reply that adds explanation around a "--- RESULT ---" wrapped block', async ({ page }) => {
+    await createSession(page);
+    const promptSection = page.getByRole('heading', { name: 'Generated AI prompt' }).locator('..');
+    const prompt = await promptSection.locator('textarea').first().inputValue();
+    expect(prompt).toContain('--- RESULT ---');
+    const sessionId = prompt.match(/SESSION ID:\s*([0-9a-f]{32})/)?.[1];
+    const pseudonyms = [...prompt.matchAll(/^([0-9a-f]{12})\t/gm)].map((m) => m[1]);
+    expect(pseudonyms.length).toBeGreaterThan(0);
+    const response = [
+      "Here's my reasoning: everyone gets pizza this week.",
+      '',
+      '--- RESULT ---',
+      `SESSION ID:\t${sessionId}`,
+      'pseudonym\tchoice',
+      ...pseudonyms.map((p) => `${p}\tpizza`),
+      '--- END RESULT ---',
+      '',
+      'Enjoy!',
+    ].join('\n');
 
     await page.getByRole('heading', { name: 'Paste AI result' }).locator('..').getByRole('textbox').fill(response);
     await page.getByRole('button', { name: /Validate & resolve locally/i }).click();

@@ -67,6 +67,35 @@ describe('applySchemas', () => {
     expect(JSON.stringify(prefs.rows)).not.toContain('Alice');
   });
 
+  it('resolves a same-table self-reference so reciprocal pairs share the exact same token', () => {
+    // Six people in three reciprocal pairs, each naming who they want to
+    // room with — a same-table reference, not a cross-table one.
+    const peopleRecords = [
+      { name: 'Alice', wants_to_room_with: 'Bob' },
+      { name: 'Bob', wants_to_room_with: 'Alice' },
+      { name: 'Carol', wants_to_room_with: 'Dave' },
+      { name: 'Dave', wants_to_room_with: 'Carol' },
+      { name: 'Eve', wants_to_room_with: 'Frank' },
+      { name: 'Frank', wants_to_room_with: 'Eve' },
+    ];
+    const { tables } = pseudonymizeTables([{ name: 'People', records: peopleRecords, identityColumn: 'name' }]);
+    const schema: DatasetSchema = {
+      columns: [
+        { name: 'name', mode: 'pseudonymize' },
+        { name: 'wants_to_room_with', mode: 'reference', referenceTarget: 'name' },
+      ],
+      output: [],
+    };
+    const [people] = applySchemas([{
+      name: 'People', records: peopleRecords, pseudonyms: tables[0].rows.map(r => r.pseudonym), schema, identityColumn: 'name',
+    }]);
+    const byPseudonym = new Map(people.rows.map(r => [r.pseudonym, r.wants_to_room_with]));
+    for (const [pseudonym, partner] of byPseudonym) {
+      expect(byPseudonym.get(partner as string)).toBe(pseudonym);
+    }
+    expect(JSON.stringify(people.rows)).not.toMatch(/Alice|Bob|Carol|Dave|Eve|Frank/);
+  });
+
   it('blocks a cross-table reference that matches no exact value, instead of leaking it', () => {
     const inputs = build();
     inputs[1].records = [{ name: 'Alice', room: 'room a (corner)', wants: 'quiet' }];
